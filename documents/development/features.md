@@ -4,14 +4,15 @@ Platform features organized by development phase.
 
 ---
 
-## Phase 1: Foundation & Infrastructure
+## Phase 1: Foundation & Infrastructure ✅
 
-- [ ] Elixir umbrella project with 6 child apps
-- [ ] Phoenix + LiveView web application
-- [ ] TypeScript build pipeline (esbuild)
-- [ ] PostgreSQL database with Ecto
-- [ ] Basic user authentication
-- [ ] Docker development environment
+- [x] Elixir umbrella project with 6 child apps
+- [x] Phoenix + LiveView web application
+- [x] TypeScript build pipeline (esbuild)
+- [x] PostgreSQL database with Ecto
+- [x] Docker development environment
+- [x] TypeScript hex coordinate system
+- [x] PixiJS 2D renderer scaffold
 
 ---
 

@@ -4,7 +4,10 @@
 
 Build a browser-based turn-based strategy wargame platform inspired by 90s Talonsoft games (Eastern Front, Western Front). The platform will be data-driven and scenario-agnostic, supporting both 2D board-game and 3D realistic rendering modes.
 
-**First Scenario**: Battle of Kursk (WWII Eastern Front)
+**First Scenario**: Grossdeutschland at Butovo-Gertsovka (July 4-5, 1943)
+- Scale: 200m per hex
+- Map: ~50x40 hexes (10km x 8km)
+- See [scenarios.md](scenarios.md) for full details
 
 ---
 
@@ -55,15 +58,16 @@ wargame_platform/
 
 ## Development Phases
 
-### Phase 1: Foundation & Infrastructure
-- Elixir umbrella project setup
-- Phoenix + LiveView configuration
-- TypeScript build pipeline (esbuild) with PixiJS + Babylon.js + Solid.js
-- PostgreSQL + initial migrations
-- Basic authentication (phx.gen.auth)
-- Docker dev environment
+### Phase 1: Foundation & Infrastructure ✅ COMPLETE
+- [x] Elixir umbrella project setup
+- [x] Phoenix + LiveView configuration
+- [x] TypeScript build pipeline (esbuild) with PixiJS + Babylon.js + Solid.js
+- [x] PostgreSQL + Ecto configuration
+- [x] Docker dev environment (docker-compose.yml)
+- [x] TypeScript hex coordinate system (`assets/ts/hex/coord.ts`)
+- [x] PixiJS 2D renderer scaffold (`assets/ts/engine/Pixi2DRenderer.ts`)
 
-### Phase 2: Core Game Engine
+### Phase 2: Core Game Engine (NEXT)
 - Hex coordinate system (axial coordinates)
 - Map data structures
 - Turn/phase management
@@ -110,11 +114,18 @@ wargame_platform/
 - Multiple AI personalities (aggressive, defensive, balanced)
 - Difficulty levels
 
-### Phase 9: Battle of Kursk Scenario
-- Historical map (120x80 hexes at 1000m scale)
-- Complete German & Soviet OOB (using editors from phases 4-5)
-- Special rules (fortifications, minefields)
+### Phase 9: Grossdeutschland at Butovo-Gertsovka Scenario
+- Historical map (50x40 hexes at 200m scale)
+- Grossdeutschland division OOB (Panthers, Tigers, Panzergrenadiers)
+- Soviet 6th Guards Army defensive positions
+- Special rules: minefields, marshy terrain, fortifications
 - Playtesting and balancing
+
+### Future Scenarios (see scenarios.md)
+- Battle for Ponyri (infantry/urban combat)
+- III Panzer Corps Donets Crossing (river assault)
+- Olkhovatka Heights (elevation/defensive terrain)
+- II SS Panzer Corps at Prokhorovka (large armor battle)
 
 ### Phase 10: 3D Rendering (Future)
 - Babylon.js terrain generation
