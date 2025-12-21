@@ -67,13 +67,16 @@ wargame_platform/
 - [x] TypeScript hex coordinate system (`assets/ts/hex/coord.ts`)
 - [x] PixiJS 2D renderer scaffold (`assets/ts/engine/Pixi2DRenderer.ts`)
 
-### Phase 2: Core Game Engine (NEXT)
-- Hex coordinate system (axial coordinates)
-- Map data structures
-- Turn/phase management
-- Basic rules engine behaviour
+### Phase 2: Core Game Engine ✅ COMPLETE
+- [x] Hex coordinate system (`wargame_core/hex/coord.ex`)
+- [x] Hex grid operations (`wargame_core/hex/grid.ex`) - neighbors, distance, LOS, pathfinding
+- [x] Terrain types module (`wargame_core/terrain/terrain_type.ex`) - 20 terrain types
+- [x] Map tile structure (`wargame_core/map/tile.ex`) - terrain, elevation, edges, overlays
+- [x] Map data structure (`wargame_core/map/map.ex`) - dimensions, tiles, pathfinding
+- [x] Turn/phase management (`wargame_core/turns/`) - phases, turn state, IGOUGO
+- [x] Rules engine behaviour (`wargame_core/rules/`) - movement, combat, victory conditions
 
-### Phase 3: 2D Rendering & Map Display
+### Phase 3: 2D Rendering & Map Display (NEXT)
 - PixiJS hex grid rendering
 - Terrain tile sprites
 - Camera pan/zoom controls
