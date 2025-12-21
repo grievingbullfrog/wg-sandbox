@@ -1,0 +1,47 @@
+FROM elixir:1.18-alpine
+
+# Install build dependencies
+RUN apk add --no-cache \
+    build-base \
+    git \
+    nodejs \
+    npm \
+    inotify-tools \
+    postgresql-client
+
+# Install hex and rebar
+RUN mix local.hex --force && \
+    mix local.rebar --force
+
+# Install pnpm
+RUN npm install -g pnpm
+
+WORKDIR /app
+
+# Copy mix files first for better caching
+COPY mix.exs mix.lock ./
+COPY apps/wargame_core/mix.exs apps/wargame_core/
+COPY apps/wargame_ai/mix.exs apps/wargame_ai/
+COPY apps/wargame_persistence/mix.exs apps/wargame_persistence/
+COPY apps/wargame_matchmaking/mix.exs apps/wargame_matchmaking/
+COPY apps/wargame_accounts/mix.exs apps/wargame_accounts/
+COPY apps/wargame_web/mix.exs apps/wargame_web/
+
+# Install Elixir dependencies
+RUN mix deps.get
+
+# Copy everything else
+COPY . .
+
+# Install Node dependencies
+WORKDIR /app/apps/wargame_web/assets
+RUN pnpm install
+
+WORKDIR /app
+
+# Compile
+RUN mix compile
+
+EXPOSE 4000
+
+CMD ["mix", "phx.server"]

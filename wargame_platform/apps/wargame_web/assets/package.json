@@ -1,0 +1,25 @@
+{
+  "name": "wargame_web_assets",
+  "version": "1.0.0",
+  "description": "Wargame Platform Frontend Assets",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && node build.js",
+    "watch": "node build.js --watch"
+  },
+  "dependencies": {
+    "phoenix": "file:../../../deps/phoenix",
+    "phoenix_html": "file:../../../deps/phoenix_html",
+    "phoenix_live_view": "file:../../../deps/phoenix_live_view",
+    "pixi.js": "^8.6.6",
+    "@babylonjs/core": "^7.35.2",
+    "@babylonjs/loaders": "^7.35.2",
+    "solid-js": "^1.9.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.2",
+    "esbuild": "^0.25.0",
+    "esbuild-plugin-solid": "^0.6.0"
+  }
+}

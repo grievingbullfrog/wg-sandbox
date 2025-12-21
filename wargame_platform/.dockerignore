@@ -1,0 +1,27 @@
+# Dependencies
+deps/
+_build/
+.elixir_ls/
+
+# Node
+apps/wargame_web/assets/node_modules/
+
+# Generated files
+apps/wargame_web/priv/static/assets/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Misc
+*.log
+.DS_Store
