@@ -1,0 +1,27 @@
+===
+High-level overview:
+
+I want to build a browser-based game, a turn-based strategy wargame against the computer or another person, with historical scenarios to play. The basic game system should be map/unit/scenario-agnostic, so that scenario-specific data is implemented in a data driven fashion. In other words I want to build a platform for building specific war games (scenario themes). The general game design will follow the model popularized in the 90s by Talonsoft, their Eastern Front, Western Front, etc. games.
+
+In the /documents/development folder will be living documents we keep up to date as we go. The game features will be recorded in features.md, and design research and notes will be in design.md. The curent development plan will be maintained in plan.md. Notes useful to developers working on the project will be in the root README.md.
+
+The backend should be an elixir (umbrella app) + phoenix + liveview app(s). The front end needs to be highly graphically dynamic and so should be a Typescript app of some sort, please recommend a Typescript framework that is good for this sort of thing.
+
+===
+
+The game will be built around the scenario map. Each scenario will have a hex-grid map of a specific size, where each hex has various attributes such as elevation, terrain type (lake, ocean, stream, pine forest, deciduous forest type 1, desert, farmland, pasture, mountain, etc), stacking size limits for the various categories of units (motorized, non-motorized, leader, recon aircraft, fighter, bomber, artillery, etc.), unit type facing restrictions (some types of units may not be able to face each of the six sides of the hex for some reason), roads into/out of, railroad track into/out of, runway into/out of, stream/river into/out of, etc.
+
+The scenario map will have two render modes: 2D and 3D. The 2D view will be flat as if the scenario map was the board of a board game, with stacks of units on various tiles represented in some way. The 3D map will be as realiztic looking as we can make it with our limited digital art skills (Claude, I hope you have mad digital art skills, I'll be calling on you to make UI assets).
+
+Each schenario map will have a certain scale, depending on the scope of the scenario. There will be a fixed list of supported scales in the platform. This could be something like 10/50/100/200/500/1000/5000/10000 meters-per-tile. We will determine the exact list of supported scales as we develop example scenarios.
+
+===
+
+For the purposes of initial wargame platform design we will pick a handful of example scenarios to use for building out the features of the platform.
+
+The first scenario we will support is in WWII on the Eastern Front, the Battle of Kursk. This is a large scale air and land battle scenario that will let us build and test many core platform features.
+
+===
+
+Please come up with a high level plan for building this platform with the example scenario and record it in plan.md. Once you come up with something we can iterate on it until I am happy enough to procede to the next step.
+
