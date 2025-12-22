@@ -308,8 +308,10 @@ defmodule WargameCore.Hex.Grid do
   - width: How wide the cone spreads (in 60-degree increments, 0-2)
   """
   @spec cone(Coord.t(), 0..5, non_neg_integer(), 0..2) :: [Coord.t()]
+  def cone(%Coord{} = _origin, _direction, 0, _width), do: []
+
   def cone(%Coord{} = origin, direction, range, width)
-      when direction in 0..5 and is_integer(range) and range >= 0 and width in 0..2 do
+      when direction in 0..5 and is_integer(range) and range > 0 and width in 0..2 do
     directions =
       case width do
         0 -> [direction]

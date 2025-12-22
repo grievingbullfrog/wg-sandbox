@@ -1,8 +1,7 @@
 defmodule WargameCoreTest do
-  use ExUnit.Case
-  doctest WargameCore
+  use ExUnit.Case, async: true
 
-  test "greets the world" do
-    assert WargameCore.hello() == :world
-  end
+  doctest WargameCore
+  doctest WargameCore.Hex.Coord
+  doctest WargameCore.Hex.Grid
 end

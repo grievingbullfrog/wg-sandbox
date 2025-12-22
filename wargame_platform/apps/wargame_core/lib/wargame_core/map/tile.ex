@@ -136,10 +136,25 @@ defmodule WargameCore.Map.Tile do
   defp calculate_edge_cost(edges, direction, category) do
     edge_features = Map.get(edges, direction, [])
 
+    # Check if a bridge or ford negates river impassability
+    has_bridge = :bridge in edge_features
+    has_ford = :ford in edge_features
+
     Enum.reduce_while(edge_features, 0, fn feature, acc ->
       case edge_feature_cost(feature, category) do
-        :impassable -> {:halt, :impassable}
-        cost -> {:cont, acc + cost}
+        :impassable when feature == :river and has_bridge ->
+          # Bridge negates river impassability completely
+          {:cont, acc}
+
+        :impassable when feature == :river and has_ford ->
+          # Ford makes river passable but adds cost
+          {:cont, acc + edge_feature_cost(:ford, category)}
+
+        :impassable ->
+          {:halt, :impassable}
+
+        cost ->
+          {:cont, acc + cost}
       end
     end)
   end

@@ -321,10 +321,10 @@ defmodule WargameCore.Rules.StandardRules do
   defp validate_movement_points(game_state, unit, path) do
     cost = calculate_path_cost(game_state, unit, path)
 
-    if cost != :impassable and cost <= unit.movement_remaining do
-      :ok
-    else
-      {:error, :insufficient_movement}
+    cond do
+      cost == :impassable -> {:error, :path_blocked}
+      cost <= unit.movement_remaining -> :ok
+      true -> {:error, :insufficient_movement}
     end
   end
 
@@ -476,8 +476,7 @@ defmodule WargameCore.Rules.StandardRules do
       "5:1": %{2 => :dr, 3 => :dr, 4 => :de, 5 => :de, 6 => :de, 7 => :de, 8 => :de, 9 => :de, 10 => :de, 11 => :de, 12 => :de}
     }
 
-    odds_key = Atom.to_string(odds)
-    Map.get(crt[odds_key], roll, :dr)
+    Map.get(crt[odds], roll, :dr)
   end
 
   defp apply_combat_result(game_state, _attacker_ids, _target_coord, result, _odds_info) do

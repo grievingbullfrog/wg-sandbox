@@ -126,13 +126,8 @@
       },
     };
 
-  if (typeof module === "object" && typeof module.exports === "object") {
-    module.exports = topbar;
-  } else if (typeof define === "function" && define.amd) {
-    define(function () {
-      return topbar;
-    });
-  } else {
-    this.topbar = topbar;
-  }
-}.call(this, window, document));
+  // ESM export for modern bundlers
+  window.topbar = topbar;
+})(window, document);
+
+export default window.topbar;

@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit && node build.js",
-    "watch": "node build.js --watch"
+    "watch": "node build.js --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "phoenix": "file:../../../deps/phoenix",
@@ -20,6 +22,7 @@
     "typescript": "^5.7.2",
     "@types/node": "^22.10.2",
     "esbuild": "^0.25.0",
-    "esbuild-plugin-solid": "^0.6.0"
+    "esbuild-plugin-solid": "^0.6.0",
+    "vitest": "^2.1.8"
   }
 }

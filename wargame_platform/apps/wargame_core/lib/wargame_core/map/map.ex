@@ -256,8 +256,9 @@ defmodule WargameCore.Map do
           tile ->
             # Check if terrain blocks LOS
             if Tile.blocks_los?(tile) do
-              # Higher elevation can see over blocking terrain
-              tile.elevation > max(from_elevation, to_elevation)
+              # Blocking terrain only blocks if it's at or above the highest endpoint
+              # (i.e., you can see over lower blocking terrain from higher ground)
+              tile.elevation >= min(from_elevation, to_elevation)
             else
               false
             end
