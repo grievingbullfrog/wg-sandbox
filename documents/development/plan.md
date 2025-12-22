@@ -76,6 +76,13 @@ wargame_platform/
 - [x] Turn/phase management (`wargame_core/turns/`) - phases, turn state, IGOUGO
 - [x] Rules engine behaviour (`wargame_core/rules/`) - movement, combat, victory conditions
 
+### Phase 2A: Test Suite ✅ COMPLETE
+- [x] Elixir test infrastructure with ExUnit
+- [x] TypeScript test infrastructure with Vitest
+- [x] Comprehensive test coverage for all core modules (91% coverage)
+- [x] Parallel test execution with unique identifiers
+- [x] Doctest integration for public API examples
+
 ### Phase 3: 2D Rendering & Map Display (NEXT)
 - PixiJS hex grid rendering
 - Terrain tile sprites
@@ -169,6 +176,83 @@ wargame_platform/
 - YAML for human-readable scenario files
 - JSON Schema for validation
 - Converts to internal Elixir structs at load time
+
+---
+
+## Running Tests
+
+### Elixir Tests (ExUnit)
+
+Run all tests from the umbrella root:
+```bash
+cd wargame_platform
+mix test
+```
+
+Run tests for a specific app:
+```bash
+mix test apps/wargame_core/test
+mix test apps/wargame_web/test
+```
+
+Run a specific test file:
+```bash
+mix test apps/wargame_core/test/wargame_core/hex/coord_test.exs
+```
+
+Run tests matching a pattern:
+```bash
+mix test apps/wargame_core/test --only test:"distance"
+```
+
+#### Test Coverage by Module
+
+**wargame_core** (332 tests, 29 doctests) - **91% code coverage**:
+
+| Module | Coverage | Test File |
+|--------|----------|-----------|
+| WargameCore.Hex.Coord | 100% | `hex/coord_test.exs` |
+| WargameCore.Hex.Grid | 100% | `hex/grid_test.exs` |
+| WargameCore.Terrain.TerrainType | 100% | `terrain/terrain_type_test.exs` |
+| WargameCore.Turns.Phase | 100% | `turns/phase_test.exs` |
+| WargameCore.Map | 97% | `map/map_test.exs` |
+| WargameCore.Turns.TurnState | 92% | `turns/turn_state_test.exs` |
+| WargameCore.Rules.StandardRules | 86% | `rules/standard_rules_test.exs` |
+| WargameCore.Map.Tile | 78% | `map/tile_test.exs` |
+
+**wargame_web** (17 tests) - **54% code coverage**:
+
+| Module | Coverage | Test File |
+|--------|----------|-----------|
+| WargameWebWeb.MapDemoLive | 95% | `live/map_demo_live_test.exs` |
+| WargameWebWeb.Router | 80% | (via integration tests) |
+
+*Note: Lower wargame_web coverage is expected as it includes Phoenix boilerplate (Telemetry, CoreComponents) not typically unit tested.*
+
+### TypeScript Tests (Vitest)
+
+Run tests from the assets directory:
+```bash
+cd wargame_platform/apps/wargame_web/assets
+npm run test        # Single run
+npm run test:watch  # Watch mode
+```
+
+#### TypeScript Test Coverage
+
+| Module | Tests | Test File |
+|--------|-------|-----------|
+| HexCoord class | 54 | `ts/hex/coord.test.ts` |
+
+Covers: HexCoord class, direction functions, pixel conversion, range/ring/line algorithms
+
+### Test Design Principles
+
+1. **Parallel Execution Safety**: All tests use `async: true` and generate unique identifiers per test process using `:erlang.phash2(self())` and `:erlang.unique_integer([:positive])` to prevent conflicts.
+
+2. **No External Dependencies**: Core game logic tests don't require a database or external services.
+
+3. **Doctest Integration**: All public functions with `@doc` examples are tested via doctests.
 
 ---
 
