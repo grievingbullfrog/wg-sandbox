@@ -3,53 +3,66 @@ import { HexCoord, hexToPixel, pixelToHex, AxialCoord } from "../hex/coord";
 
 /**
  * Terrain type enumeration matching backend terrain types
+ * These must match WargameCore.Terrain.TerrainType definitions
  */
 export type TerrainType =
   | "clear"
+  | "forest_pine"
+  | "forest_deciduous"
+  | "hill"
+  | "mountain"
+  | "desert"
+  | "farmland"
+  | "pasture"
+  | "swamp"
+  | "marsh"
+  | "lake"
+  | "river"
+  | "ocean"
+  | "urban"
+  | "village"
+  | "ruins"
+  | "road"
+  | "railroad"
+  | "fortification"
+  | "minefield"
+  // Legacy aliases for backwards compatibility
   | "woods"
   | "forest"
   | "hills"
-  | "mountains"
-  | "marsh"
-  | "swamp"
-  | "water"
-  | "river"
-  | "lake"
-  | "urban"
-  | "village"
-  | "road"
-  | "railroad"
-  | "bridge"
-  | "ford"
-  | "fortification"
-  | "trench"
-  | "bunker"
-  | "airfield";
+  | "mountains";
 
 /**
- * Color mapping for terrain types (matching Elixir TerrainType colors)
+ * Color mapping for terrain types (matching Elixir TerrainType colors exactly)
  */
 const TERRAIN_COLORS: Record<string, number> = {
-  clear: 0x90ee90,       // Light green
-  woods: 0x228b22,       // Forest green
-  forest: 0x006400,      // Dark green
-  hills: 0xdeb887,       // Burlywood
-  mountains: 0x808080,   // Gray
-  marsh: 0x9acd32,       // Yellow green
-  swamp: 0x556b2f,       // Dark olive green
-  water: 0x4169e1,       // Royal blue
-  river: 0x4682b4,       // Steel blue
-  lake: 0x1e90ff,        // Dodger blue
-  urban: 0xa9a9a9,       // Dark gray
-  village: 0xd2691e,     // Chocolate
-  road: 0x8b4513,        // Saddle brown
-  railroad: 0x2f4f4f,    // Dark slate gray
-  bridge: 0x696969,      // Dim gray
-  ford: 0x87ceeb,        // Sky blue
-  fortification: 0x808000, // Olive
-  trench: 0x6b4423,      // Brown
-  bunker: 0x505050,      // Dark gray
-  airfield: 0xd3d3d3,    // Light gray
+  // Primary terrain types (matching Elixir TerrainType)
+  clear: 0x90ee90,           // Light green
+  forest_pine: 0x228b22,     // Forest green
+  forest_deciduous: 0x32cd32, // Lime green
+  hill: 0xa0522d,            // Sienna
+  mountain: 0x808080,        // Gray
+  desert: 0xf4a460,          // Sandy brown
+  farmland: 0xdaa520,        // Goldenrod
+  pasture: 0x98fb98,         // Pale green
+  swamp: 0x556b2f,           // Dark olive green
+  marsh: 0x6b8e23,           // Olive drab
+  lake: 0x4169e1,            // Royal blue
+  river: 0x1e90ff,           // Dodger blue
+  ocean: 0x000080,           // Navy
+  urban: 0x696969,           // Dim gray
+  village: 0xa9a9a9,         // Dark gray
+  ruins: 0x8b4513,           // Saddle brown
+  road: 0xd2b48c,            // Tan
+  railroad: 0x4a4a4a,        // Dark gray
+  fortification: 0x654321,   // Dark brown
+  minefield: 0xff6347,       // Tomato
+
+  // Legacy aliases for backwards compatibility with demo map
+  woods: 0x228b22,           // Same as forest_pine
+  forest: 0x006400,          // Dark green
+  hills: 0xa0522d,           // Same as hill
+  mountains: 0x808080,       // Same as mountain
 };
 
 /**

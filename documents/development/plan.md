@@ -83,13 +83,19 @@ wargame_platform/
 - [x] Parallel test execution with unique identifiers
 - [x] Doctest integration for public API examples
 
-### Phase 3: 2D Rendering & Map Display (NEXT)
-- PixiJS hex grid rendering
-- Terrain tile sprites
-- Camera pan/zoom controls
-- Hex selection and highlighting
+### Phase 3: 2D Rendering & Map Display ✅ COMPLETE
+- [x] PixiJS hex grid rendering (`assets/ts/engine/Pixi2DRenderer.ts`)
+- [x] Terrain tile colors (20 terrain types matching Elixir backend)
+- [x] Camera pan/zoom controls (mouse drag & scroll wheel)
+- [x] Hex selection and highlighting (5 highlight modes)
+- [x] LiveView integration via Phoenix hooks (`assets/ts/hooks/MapHook.ts`)
+- [x] Demo map view (`/map-demo` route)
+- [x] Edge features rendering (roads, rivers, railroads, bridges)
+- [x] Overlay rendering (fortifications, trenches, minefields, bunkers, wire)
+- [x] Victory point indicators and control flags
+- [x] Coordinate labels and elevation shading
 
-### Phase 4: Map Editor
+### Phase 4: Map Editor (NEXT)
 - LiveView-based hex map editor
 - Terrain painting tools (brush, fill, line)
 - Elevation editing
@@ -243,8 +249,13 @@ npm run test:watch  # Watch mode
 | Module | Tests | Test File |
 |--------|-------|-----------|
 | HexCoord class | 54 | `ts/hex/coord.test.ts` |
+| Pixi2DRenderer types | 10 | `ts/engine/Pixi2DRenderer.test.ts` |
 
-Covers: HexCoord class, direction functions, pixel conversion, range/ring/line algorithms
+**Total: 64 tests**
+
+Covers:
+- HexCoord class, direction functions, pixel conversion, range/ring/line algorithms
+- Terrain types matching Elixir backend, tile data structures, highlight modes, config validation
 
 ### Test Design Principles
 
