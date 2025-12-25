@@ -247,7 +247,7 @@ describe('hexNeighbors', () => {
   });
 });
 
-describe('hexToPixel', () => {
+describe('hexToPixel (offset coordinates)', () => {
   it('origin maps to (0, 0)', () => {
     const coord = new HexCoord(0, 0);
     const pixel = hexToPixel(coord, 40);
@@ -260,6 +260,38 @@ describe('hexToPixel', () => {
     const pixel = hexToPixel(coord, 40);
     expect(typeof pixel.x).toBe('number');
     expect(typeof pixel.y).toBe('number');
+  });
+
+  it('odd rows are shifted right', () => {
+    const size = 40;
+    const hexWidth = Math.sqrt(3) * size;
+
+    // Even row (r=0): no offset
+    const evenRow = hexToPixel({ q: 0, r: 0 }, size);
+    expect(evenRow.x).toBeCloseTo(0, 4);
+
+    // Odd row (r=1): shifted right by half hex width
+    const oddRow = hexToPixel({ q: 0, r: 1 }, size);
+    expect(oddRow.x).toBeCloseTo(hexWidth / 2, 4);
+
+    // Even row (r=2): no offset again
+    const evenRow2 = hexToPixel({ q: 0, r: 2 }, size);
+    expect(evenRow2.x).toBeCloseTo(0, 4);
+  });
+
+  it('produces rectangular grid layout', () => {
+    const size = 40;
+    const hexWidth = Math.sqrt(3) * size;
+
+    // Hexes in same column should have same x (accounting for row offset)
+    const row0col1 = hexToPixel({ q: 1, r: 0 }, size);
+    const row2col1 = hexToPixel({ q: 1, r: 2 }, size);
+    expect(row0col1.x).toBeCloseTo(row2col1.x, 4);
+
+    // Hexes in same row should be evenly spaced
+    const row0col0 = hexToPixel({ q: 0, r: 0 }, size);
+    const row0col2 = hexToPixel({ q: 2, r: 0 }, size);
+    expect(row0col2.x - row0col0.x).toBeCloseTo(2 * hexWidth, 4);
   });
 });
 

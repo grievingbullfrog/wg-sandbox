@@ -19,6 +19,7 @@ defmodule WargameWebWeb.Router do
 
     get "/", PageController, :home
     live "/map-demo", MapDemoLive
+    live "/map-editor", MapEditorLive
   end
 
   # Other scopes may use custom stacks.

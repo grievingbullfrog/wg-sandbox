@@ -76,6 +76,15 @@ export type EdgeFeature = "road" | "railroad" | "river" | "stream" | "bridge" | 
 export type OverlayType = "minefield" | "fortification" | "trench" | "wire" | "bunker";
 
 /**
+ * Modifier keys state for click events
+ */
+export interface HexClickModifiers {
+  shift: boolean;
+  ctrl: boolean;
+  alt: boolean;
+}
+
+/**
  * Tile data for rendering
  */
 export interface TileData {
@@ -92,12 +101,19 @@ export interface TileData {
 /**
  * Configuration for the 2D renderer
  */
+/**
+ * Overlay display modes for showing per-tile information
+ */
+export type TileOverlayMode = "none" | "elevation_relative" | "elevation_absolute" | "terrain" | "control";
+
 export interface Pixi2DRendererConfig {
   hexSize: number;
   backgroundColor: number;
   showGrid: boolean;
   showCoords: boolean;
-  showElevation: boolean;
+  tileOverlay: TileOverlayMode;
+  elevationToolActive: boolean;
+  baseElevation: number;
 }
 
 const DEFAULT_CONFIG: Pixi2DRendererConfig = {
@@ -105,7 +121,9 @@ const DEFAULT_CONFIG: Pixi2DRendererConfig = {
   backgroundColor: 0x1a1a2e,
   showGrid: true,
   showCoords: false,
-  showElevation: true,
+  tileOverlay: "none",
+  elevationToolActive: false,
+  baseElevation: 0,
 };
 
 /**
@@ -138,8 +156,12 @@ export class Pixi2DRenderer {
   private hoveredHex: HexCoord | null = null;
   private hexGraphics: Map<string, Graphics> = new Map();
   private highlightGraphics: Map<string, Graphics> = new Map();
+  private tileDataMap: Map<string, TileData> = new Map();
+  private elevationPopup: Text | null = null;
   private isDragging = false;
   private dragStartPos = { x: 0, y: 0 };
+  private mapWidth = 0;
+  private mapHeight = 0;
 
   constructor(config: Partial<Pixi2DRendererConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -208,7 +230,13 @@ export class Pixi2DRenderer {
         // This was a click, not a drag
         const worldPos = this.screenToWorld(event.global.x, event.global.y);
         const clickedHex = pixelToHex(worldPos.x, worldPos.y, this.config.hexSize);
-        this.selectHex(clickedHex);
+        // Pass modifier keys from the original event
+        const modifiers = {
+          shift: event.shiftKey ?? false,
+          ctrl: event.ctrlKey ?? false,
+          alt: event.altKey ?? false,
+        };
+        this.selectHex(clickedHex, modifiers);
       }
       this.isDragging = false;
     });
@@ -241,9 +269,14 @@ export class Pixi2DRenderer {
     });
 
     // Zoom with mouse wheel
+    // Use normalized zoom for smoother trackpad scrolling
     this.app.canvas.addEventListener("wheel", (event) => {
       event.preventDefault();
-      const scaleFactor = event.deltaY > 0 ? 0.9 : 1.1;
+      // Normalize deltaY: clamp to reasonable range and scale down
+      // Trackpads often send many small delta values, mice send larger ones
+      const normalizedDelta = Math.sign(event.deltaY) * Math.min(Math.abs(event.deltaY), 100);
+      const zoomIntensity = 0.002; // Reduced from 0.1 for smoother zooming
+      const scaleFactor = 1 - normalizedDelta * zoomIntensity;
       this.zoomAt(event.offsetX, event.offsetY, scaleFactor);
     });
   }
@@ -371,19 +404,13 @@ export class Pixi2DRenderer {
       hex.stroke({ width: 1, color: 0x000000, alpha: 0.4 });
     }
 
-    // Draw elevation shading
-    if (this.config.showElevation && tile.elevation && tile.elevation > 0) {
-      const shade = Math.min(tile.elevation * 0.1, 0.3);
-      hex.poly(this.getHexPoints(0, 0));
-      hex.fill({ color: 0xffffff, alpha: shade });
-    }
-
     hex.x = x;
     hex.y = y;
 
     // Store for later reference
     const key = `${tile.coord.q},${tile.coord.r}`;
     this.hexGraphics.set(key, hex);
+    this.tileDataMap.set(key, tile);
 
     this.mapContainer.addChild(hex);
 
@@ -412,7 +439,62 @@ export class Pixi2DRenderer {
       this.drawControlIndicator(tile.coord, tile.control);
     }
 
+    // Draw tile overlay text based on selected overlay mode
+    if (this.config.tileOverlay !== "none") {
+      this.drawTileOverlay(tile);
+    }
+
     return hex;
+  }
+
+  /**
+   * Draw tile overlay text (elevation, terrain name, etc.)
+   */
+  private drawTileOverlay(tile: TileData): void {
+    const { x, y } = hexToPixel(tile.coord, this.config.hexSize);
+    let text = "";
+
+    switch (this.config.tileOverlay) {
+      case "elevation_relative":
+        const elevation = tile.elevation ?? 0;
+        text = elevation === 0 ? "0" : (elevation > 0 ? `+${elevation}` : `${elevation}`);
+        break;
+      case "elevation_absolute":
+        const absElevation = this.config.baseElevation + (tile.elevation ?? 0);
+        text = `${absElevation}`;
+        break;
+      case "terrain":
+        text = (tile.terrain as string).replace("_", "\n");
+        break;
+      case "control":
+        text = tile.control ?? "";
+        break;
+      default:
+        return;
+    }
+
+    if (!text) return;
+
+    // Get terrain color for contrast calculation
+    const terrain = (tile.terrain as string) ?? "clear";
+    const terrainColor = TERRAIN_COLORS[terrain] ?? TERRAIN_COLORS.clear;
+    const textColor = this.getContrastColor(terrainColor);
+
+    const fontSize = this.config.hexSize * 0.35;
+    const style = new TextStyle({
+      fontFamily: "Arial",
+      fontSize: fontSize,
+      fontWeight: "bold",
+      fill: textColor,
+      align: "center",
+    });
+
+    const label = new Text({ text, style });
+    label.anchor.set(0.5, 0.5);
+    label.x = x;
+    label.y = y;
+
+    this.labelContainer.addChild(label);
   }
 
   /**
@@ -687,23 +769,51 @@ export class Pixi2DRenderer {
   }
 
   /**
+   * Modifier keys state for click events
+   */
+  static readonly DEFAULT_MODIFIERS: HexClickModifiers = { shift: false, ctrl: false, alt: false };
+
+  /**
    * Select a hex
    */
-  selectHex(coord: HexCoord): void {
+  selectHex(coord: HexCoord, modifiers: HexClickModifiers = Pixi2DRenderer.DEFAULT_MODIFIERS): void {
+    // Ignore clicks outside map bounds
+    if (!this.isInBounds(coord)) {
+      return;
+    }
+
     // Clear previous selection highlight
     if (this.selectedHex) {
       this.clearHighlight(this.selectedHex);
     }
 
+    // Clear hover highlight from previously hovered hex if it's different from the new selection
+    // This prevents stale hover highlights from persisting after selection changes
+    if (this.hoveredHex && !this.hoveredHex.equals(coord)) {
+      this.clearHighlight(this.hoveredHex);
+    }
+
     this.selectedHex = coord;
+    this.hoveredHex = coord; // Update hover to match selection
     this.highlightHex(coord, "selected");
-    this.onHexSelected?.(coord);
+    this.onHexSelected?.(coord, modifiers);
   }
 
   /**
    * Set the hovered hex
    */
   private setHoveredHex(coord: HexCoord): void {
+    // Ignore hover outside map bounds
+    if (!this.isInBounds(coord)) {
+      // Clear previous hover if we moved outside bounds
+      if (this.hoveredHex && (!this.selectedHex || !this.hoveredHex.equals(this.selectedHex))) {
+        this.clearHighlight(this.hoveredHex);
+      }
+      this.hoveredHex = null;
+      this.hideElevationPopup();
+      return;
+    }
+
     // Clear previous hover highlight (but not if it's selected)
     if (this.hoveredHex && (!this.selectedHex || !this.hoveredHex.equals(this.selectedHex))) {
       this.clearHighlight(this.hoveredHex);
@@ -716,7 +826,126 @@ export class Pixi2DRenderer {
       this.highlightHex(coord, "hover");
     }
 
+    // Show elevation popup when elevation tool is active
+    if (this.config.elevationToolActive) {
+      this.showElevationPopup(coord);
+    } else {
+      this.hideElevationPopup();
+    }
+
     this.onHexHovered?.(coord);
+  }
+
+  /**
+   * Show elevation popup on the hovered hex
+   */
+  private showElevationPopup(coord: HexCoord): void {
+    const key = `${coord.q},${coord.r}`;
+    const tileData = this.tileDataMap.get(key);
+    const elevation = tileData?.elevation ?? 0;
+
+    // Format elevation with sign for non-zero values
+    const elevationText = elevation === 0 ? "0" : (elevation > 0 ? `+${elevation}` : `${elevation}`);
+
+    // Get terrain color for contrast calculation
+    const terrain = (tileData?.terrain as string) ?? "clear";
+    const terrainColor = TERRAIN_COLORS[terrain] ?? TERRAIN_COLORS.clear;
+    const textColor = this.getContrastColor(terrainColor);
+
+    const { x, y } = hexToPixel(coord, this.config.hexSize);
+
+    if (!this.elevationPopup) {
+      // Create popup text - font size is 25% of hex height (hex height = 2 * hexSize)
+      const fontSize = this.config.hexSize * 0.5; // 25% of (2 * hexSize)
+      const style = new TextStyle({
+        fontFamily: "Arial",
+        fontSize: fontSize,
+        fontWeight: "bold",
+        fill: textColor,
+        align: "center",
+      });
+      this.elevationPopup = new Text({ text: elevationText, style });
+      this.elevationPopup.anchor.set(0.5, 0.5);
+      // Add to labelContainer so it moves/scales with the map
+      this.labelContainer.addChild(this.elevationPopup);
+    } else {
+      this.elevationPopup.text = elevationText;
+      // Update font size and color in case hex size or terrain changed
+      const fontSize = this.config.hexSize * 0.5;
+      this.elevationPopup.style.fontSize = fontSize;
+      this.elevationPopup.style.fill = textColor;
+    }
+
+    this.elevationPopup.x = x;
+    this.elevationPopup.y = y;
+    this.elevationPopup.visible = true;
+  }
+
+  /**
+   * Calculate contrasting text color (black or white) based on background color luminance
+   */
+  private getContrastColor(bgColor: number): number {
+    // Extract RGB components
+    const r = (bgColor >> 16) & 0xff;
+    const g = (bgColor >> 8) & 0xff;
+    const b = bgColor & 0xff;
+
+    // Calculate relative luminance using sRGB formula
+    // https://www.w3.org/TR/WCAG20/#relativeluminancedef
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+    // Return black for light backgrounds, white for dark backgrounds
+    return luminance > 0.5 ? 0x000000 : 0xffffff;
+  }
+
+  /**
+   * Hide the elevation popup
+   */
+  private hideElevationPopup(): void {
+    if (this.elevationPopup) {
+      this.elevationPopup.visible = false;
+    }
+  }
+
+  /**
+   * Update a single hex tile (removes old graphics first)
+   */
+  updateHex(tile: TileData): void {
+    const key = `${tile.coord.q},${tile.coord.r}`;
+
+    // Remove old hex graphics
+    const oldHex = this.hexGraphics.get(key);
+    if (oldHex) {
+      this.mapContainer.removeChild(oldHex);
+      oldHex.destroy();
+      this.hexGraphics.delete(key);
+    }
+
+    // Remove old edge/overlay graphics for this hex (they're not tracked individually,
+    // so we need to redraw the hex which will add new ones)
+    // For now, we just draw the new hex on top - a full solution would track all graphics per hex
+
+    // Draw the new hex
+    this.drawHex(tile);
+
+    // Update elevation popup if this hex is currently hovered and elevation tool is active
+    if (
+      this.config.elevationToolActive &&
+      this.hoveredHex &&
+      this.hoveredHex.q === tile.coord.q &&
+      this.hoveredHex.r === tile.coord.r
+    ) {
+      this.showElevationPopup(this.hoveredHex);
+    }
+  }
+
+  /**
+   * Update multiple hex tiles
+   */
+  updateHexes(tiles: TileData[]): void {
+    for (const tile of tiles) {
+      this.updateHex(tile);
+    }
   }
 
   /**
@@ -738,6 +967,12 @@ export class Pixi2DRenderer {
     this.overlayContainer.removeChildren();
     this.labelContainer.removeChildren();
     this.hexGraphics.clear();
+    this.tileDataMap.clear();
+    // Destroy elevation popup since labelContainer.removeChildren() removed it
+    if (this.elevationPopup) {
+      this.elevationPopup.destroy();
+      this.elevationPopup = null;
+    }
     this.clearAllHighlights();
   }
 
@@ -776,15 +1011,36 @@ export class Pixi2DRenderer {
    * Center the camera on the map
    */
   centerOnMap(width: number, height: number): void {
+    this.mapWidth = width;
+    this.mapHeight = height;
     const centerQ = Math.floor(width / 2);
     const centerR = Math.floor(height / 2);
     this.centerOnHex({ q: centerQ, r: centerR });
   }
 
   /**
+   * Set the map dimensions for bounds checking
+   */
+  setMapDimensions(width: number, height: number): void {
+    this.mapWidth = width;
+    this.mapHeight = height;
+  }
+
+  /**
+   * Check if a coordinate is within the map bounds
+   */
+  isInBounds(coord: { q: number; r: number }): boolean {
+    if (this.mapWidth === 0 || this.mapHeight === 0) {
+      // No bounds set, allow all coordinates
+      return true;
+    }
+    return coord.q >= 0 && coord.q < this.mapWidth && coord.r >= 0 && coord.r < this.mapHeight;
+  }
+
+  /**
    * Callback for hex selection
    */
-  onHexSelected?: (coord: HexCoord) => void;
+  onHexSelected?: (coord: HexCoord, modifiers: HexClickModifiers) => void;
 
   /**
    * Callback for hex hover
@@ -809,7 +1065,17 @@ export class Pixi2DRenderer {
    * Update configuration
    */
   setConfig(config: Partial<Pixi2DRendererConfig>): void {
+    const wasElevationToolActive = this.config.elevationToolActive;
     this.config = { ...this.config, ...config };
+
+    // Hide elevation popup when elevation tool is deactivated
+    if (wasElevationToolActive && !this.config.elevationToolActive) {
+      this.hideElevationPopup();
+    }
+    // Show elevation popup if elevation tool is now active and we have a hovered hex
+    if (!wasElevationToolActive && this.config.elevationToolActive && this.hoveredHex) {
+      this.showElevationPopup(this.hoveredHex);
+    }
   }
 
   /**

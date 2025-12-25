@@ -120,25 +120,96 @@ export function hexNeighbors(coord: AxialCoord): HexCoord[] {
 
 /**
  * Convert axial hex coordinate to pixel position (pointy-top orientation)
+ * This is for true axial coordinates where moving in +r direction goes diagonally.
  * @param coord Hex coordinate
  * @param size Hex size (distance from center to corner)
  */
-export function hexToPixel(coord: AxialCoord, size: number): { x: number; y: number } {
+export function hexToPixelAxial(coord: AxialCoord, size: number): { x: number; y: number } {
   const x = size * (Math.sqrt(3) * coord.q + (Math.sqrt(3) / 2) * coord.r);
   const y = size * ((3 / 2) * coord.r);
   return { x, y };
 }
 
 /**
+ * Convert offset hex coordinate to pixel position (pointy-top, odd-r layout)
+ * This creates a rectangular grid where odd rows are shifted right.
+ * Used when q=column, r=row in a rectangular map.
+ * @param coord Offset coordinate (q=column, r=row)
+ * @param size Hex size (distance from center to corner)
+ */
+export function hexToPixel(coord: AxialCoord, size: number): { x: number; y: number } {
+  const hexWidth = Math.sqrt(3) * size;
+  const hexHeight = 2 * size;
+  const vertSpacing = hexHeight * 0.75;
+
+  // Odd rows shift right by half a hex width
+  const xOffset = (coord.r % 2 === 1) ? hexWidth / 2 : 0;
+
+  const x = coord.q * hexWidth + xOffset;
+  const y = coord.r * vertSpacing;
+
+  return { x, y };
+}
+
+/**
  * Convert pixel position to axial hex coordinate (pointy-top orientation)
+ * This is for true axial coordinates.
+ * @param x Pixel x
+ * @param y Pixel y
+ * @param size Hex size
+ */
+export function pixelToHexAxial(x: number, y: number, size: number): HexCoord {
+  const q = ((Math.sqrt(3) / 3) * x - (1 / 3) * y) / size;
+  const r = ((2 / 3) * y) / size;
+  return hexRound(q, r);
+}
+
+/**
+ * Convert pixel position to offset hex coordinate (pointy-top, odd-r layout)
+ * Used for rectangular maps where q=column, r=row.
  * @param x Pixel x
  * @param y Pixel y
  * @param size Hex size
  */
 export function pixelToHex(x: number, y: number, size: number): HexCoord {
-  const q = ((Math.sqrt(3) / 3) * x - (1 / 3) * y) / size;
-  const r = ((2 / 3) * y) / size;
-  return hexRound(q, r);
+  const hexWidth = Math.sqrt(3) * size;
+  const hexHeight = 2 * size;
+  const vertSpacing = hexHeight * 0.75;
+
+  // First determine the row
+  const row = Math.round(y / vertSpacing);
+
+  // Adjust x for the row offset
+  const xOffset = (row % 2 === 1) ? hexWidth / 2 : 0;
+  const col = Math.round((x - xOffset) / hexWidth);
+
+  // Do a more precise check by testing this hex and neighbors
+  // to find which hex center is actually closest
+  const candidates = [
+    { q: col, r: row },
+    { q: col - 1, r: row },
+    { q: col + 1, r: row },
+    { q: col, r: row - 1 },
+    { q: col, r: row + 1 },
+    { q: col - 1, r: row - 1 },
+    { q: col + 1, r: row - 1 },
+    { q: col - 1, r: row + 1 },
+    { q: col + 1, r: row + 1 },
+  ];
+
+  let closest = candidates[0];
+  let closestDist = Infinity;
+
+  for (const candidate of candidates) {
+    const center = hexToPixel(candidate, size);
+    const dist = Math.sqrt((x - center.x) ** 2 + (y - center.y) ** 2);
+    if (dist < closestDist) {
+      closestDist = dist;
+      closest = candidate;
+    }
+  }
+
+  return new HexCoord(closest.q, closest.r);
 }
 
 /**

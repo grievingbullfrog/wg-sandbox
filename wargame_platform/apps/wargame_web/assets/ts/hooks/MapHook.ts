@@ -1,4 +1,4 @@
-import { Pixi2DRenderer, TileData, Pixi2DRendererConfig } from "../engine/Pixi2DRenderer";
+import { Pixi2DRenderer, TileData, Pixi2DRendererConfig, HexClickModifiers } from "../engine/Pixi2DRenderer";
 import { HexCoord } from "../hex/coord";
 import "../types/phoenix.d.ts";
 
@@ -14,17 +14,15 @@ import "../types/phoenix.d.ts";
  *         data-width="50" data-height="40" data-scale="200"></canvas>
  * ```
  */
-export const MapHook: ViewHook & { renderer: Pixi2DRenderer | null } = {
-  el: null as unknown as HTMLElement,
-  renderer: null,
 
-  pushEvent(_event: string, _payload?: Record<string, unknown>, _callback?: (reply: unknown, ref: number) => void): void {},
-  pushEventTo(_selectorOrTarget: string | HTMLElement, _event: string, _payload?: Record<string, unknown>, _callback?: (reply: unknown, ref: number) => void): void {},
-  handleEvent(_event: string, _callback: (payload: unknown) => void): void {},
-  upload(_name: string, _files: FileList | File[]): void {},
-  uploadTo(_selectorOrTarget: string | HTMLElement, _name: string, _files: FileList | File[]): void {},
+export interface MapHookType {
+  renderer: Pixi2DRenderer | null;
+}
 
-  async mounted() {
+export const MapHook = {
+  renderer: null as Pixi2DRenderer | null,
+
+  async mounted(this: ViewHook & MapHookType) {
     const canvas = this.el as HTMLCanvasElement;
 
     // Get configuration from data attributes
@@ -40,8 +38,8 @@ export const MapHook: ViewHook & { renderer: Pixi2DRenderer | null } = {
     await this.renderer.init(canvas);
 
     // Set up hex selection callback
-    this.renderer.onHexSelected = (coord: HexCoord) => {
-      this.pushEvent("hex_selected", { q: coord.q, r: coord.r });
+    this.renderer.onHexSelected = (coord: HexCoord, modifiers: HexClickModifiers) => {
+      this.pushEvent("hex_selected", { q: coord.q, r: coord.r, shift: modifiers.shift });
     };
 
     // Set up hex hover callback
@@ -103,14 +101,14 @@ export const MapHook: ViewHook & { renderer: Pixi2DRenderer | null } = {
     this.pushEvent("map_ready", {});
   },
 
-  destroyed() {
+  destroyed(this: ViewHook & MapHookType) {
     if (this.renderer) {
       this.renderer.destroy();
       this.renderer = null;
     }
   },
 
-  reconnected() {
+  reconnected(this: ViewHook & MapHookType) {
     // Request map data again after reconnection
     this.pushEvent("map_ready", {});
   },

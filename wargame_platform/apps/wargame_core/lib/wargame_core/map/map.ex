@@ -24,6 +24,7 @@ defmodule WargameCore.Map do
           width: pos_integer(),
           height: pos_integer(),
           scale: pos_integer(),
+          base_elevation: integer(),
           tiles: %{Coord.t() => Tile.t()},
           default_terrain: atom(),
           metadata: map()
@@ -37,6 +38,7 @@ defmodule WargameCore.Map do
     :height,
     :scale,
     description: "",
+    base_elevation: 0,
     tiles: %{},
     default_terrain: :clear,
     metadata: %{}
@@ -55,6 +57,7 @@ defmodule WargameCore.Map do
   - opts: Optional parameters
     - :default_terrain - Terrain type for all initial tiles (default: :clear)
     - :description - Map description
+    - :base_elevation - Base elevation in meters (default: 0)
 
   ## Examples
 
@@ -69,6 +72,7 @@ defmodule WargameCore.Map do
       when is_binary(name) and width > 0 and height > 0 and scale > 0 do
     default_terrain = Keyword.get(opts, :default_terrain, :clear)
     description = Keyword.get(opts, :description, "")
+    base_elevation = Keyword.get(opts, :base_elevation, 0)
 
     tiles =
       for q <- 0..(width - 1), r <- 0..(height - 1), into: %{} do
@@ -81,6 +85,7 @@ defmodule WargameCore.Map do
       width: width,
       height: height,
       scale: scale,
+      base_elevation: base_elevation,
       description: description,
       tiles: tiles,
       default_terrain: default_terrain

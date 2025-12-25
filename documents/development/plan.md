@@ -95,15 +95,21 @@ wargame_platform/
 - [x] Victory point indicators and control flags
 - [x] Coordinate labels and elevation shading
 
-### Phase 4: Map Editor (NEXT)
-- LiveView-based hex map editor
-- Terrain painting tools (brush, fill, line)
-- Elevation editing
-- Edge features (roads, rivers, railroads)
-- Map save/load to YAML format
-- Map resize and scale configuration
+### Phase 4: Map Editor ✅ COMPLETE
+- [x] LiveView-based hex map editor (`lib/wargame_web_web/live/map_editor_live.ex`)
+- [x] Terrain painting tools (brush, fill, line, eraser)
+- [x] Elevation editing with selectable levels (0-5)
+- [x] Edge features editing (roads, rivers, railroads, streams, bridges, fords)
+- [x] Overlay editing (fortifications, trenches, minefields, bunkers, wire)
+- [x] Map save/load to YAML format with download/upload
+- [x] Map resize and scale configuration modal
+- [x] Undo/redo history (50 levels)
+- [x] View options (grid, coordinates, elevation shading)
+- [x] Real-time hex info panel
+- [x] Phoenix hook for client-side rendering (`assets/ts/hooks/MapEditorHook.ts`)
+- [x] Comprehensive test suite (27 tests)
 
-### Phase 5: Scenario Editor
+### Phase 5: Scenario Editor (NEXT)
 - Scenario metadata editing (name, description, scale, sides)
 - Starting unit placement with drag-and-drop
 - Order of Battle (OOB) management
@@ -226,10 +232,11 @@ mix test apps/wargame_core/test --only test:"distance"
 | WargameCore.Rules.StandardRules | 86% | `rules/standard_rules_test.exs` |
 | WargameCore.Map.Tile | 78% | `map/tile_test.exs` |
 
-**wargame_web** (17 tests) - **54% code coverage**:
+**wargame_web** (44 tests) - **65% code coverage**:
 
 | Module | Coverage | Test File |
 |--------|----------|-----------|
+| WargameWebWeb.MapEditorLive | 90% | `live/map_editor_live_test.exs` |
 | WargameWebWeb.MapDemoLive | 95% | `live/map_demo_live_test.exs` |
 | WargameWebWeb.Router | 80% | (via integration tests) |
 
