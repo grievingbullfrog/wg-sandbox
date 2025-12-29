@@ -46,6 +46,30 @@ mix ecto.setup
 mix phx.server
 ```
 
+### Running Tests
+
+```bash
+# Run all tests
+cd wargame_platform
+mix test
+
+# Run tests for a specific app
+mix test apps/wargame_core/test
+mix test apps/wargame_web/test
+
+# Run a specific test file
+mix test apps/wargame_core/test/wargame_core/map/tile_test.exs
+
+# Run a specific test by line number
+mix test apps/wargame_core/test/wargame_core/map/tile_test.exs:42
+
+# Run tests with verbose output
+mix test --trace
+
+# Run only failed tests from previous run
+mix test --failed
+```
+
 ## Documentation
 
 - [Development Plan](documents/development/plan.md)
