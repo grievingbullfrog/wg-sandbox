@@ -9,71 +9,82 @@ export type TerrainType =
   | "clear"
   | "forest_pine"
   | "forest_deciduous"
-  | "hill"
-  | "mountain"
-  | "desert"
-  | "farmland"
-  | "pasture"
-  | "swamp"
   | "marsh"
-  | "lake"
-  | "river"
+  | "orchard"
+  | "light_urban"
+  | "heavy_urban"
+  | "industrial"
+  | "desert"
+  | "semi_arid"
+  | "tundra"
+  | "arctic"
+  | "freshwater_lake"
+  | "frozen_lake"
   | "ocean"
-  | "urban"
-  | "village"
-  | "ruins"
-  | "road"
-  | "railroad"
-  | "fortification"
-  | "minefield"
-  // Legacy aliases for backwards compatibility
-  | "woods"
-  | "forest"
-  | "hills"
-  | "mountains";
+  | "frozen_ocean";
 
 /**
  * Color mapping for terrain types (matching Elixir TerrainType colors exactly)
  */
 const TERRAIN_COLORS: Record<string, number> = {
-  // Primary terrain types (matching Elixir TerrainType)
   clear: 0x90ee90,           // Light green
   forest_pine: 0x228b22,     // Forest green
   forest_deciduous: 0x32cd32, // Lime green
-  hill: 0xa0522d,            // Sienna
-  mountain: 0x808080,        // Gray
-  desert: 0xf4a460,          // Sandy brown
-  farmland: 0xdaa520,        // Goldenrod
-  pasture: 0x98fb98,         // Pale green
-  swamp: 0x556b2f,           // Dark olive green
   marsh: 0x6b8e23,           // Olive drab
-  lake: 0x4169e1,            // Royal blue
-  river: 0x1e90ff,           // Dodger blue
+  orchard: 0x9acd32,         // Yellow-green
+  light_urban: 0xa9a9a9,     // Dark gray
+  heavy_urban: 0x696969,     // Dim gray
+  industrial: 0x505050,      // Dark gray
+  desert: 0xf4a460,          // Sandy brown
+  semi_arid: 0xc2b280,       // Khaki
+  tundra: 0x8b8682,          // Gray-brown
+  arctic: 0xe8e8e8,          // Off-white
+  freshwater_lake: 0x4169e1, // Royal blue
+  frozen_lake: 0xb0e0e6,     // Powder blue
   ocean: 0x000080,           // Navy
-  urban: 0x696969,           // Dim gray
-  village: 0xa9a9a9,         // Dark gray
-  ruins: 0x8b4513,           // Saddle brown
-  road: 0xd2b48c,            // Tan
-  railroad: 0x4a4a4a,        // Dark gray
-  fortification: 0x654321,   // Dark brown
-  minefield: 0xff6347,       // Tomato
-
-  // Legacy aliases for backwards compatibility with demo map
-  woods: 0x228b22,           // Same as forest_pine
-  forest: 0x006400,          // Dark green
-  hills: 0xa0522d,           // Same as hill
-  mountains: 0x808080,       // Same as mountain
+  frozen_ocean: 0xadd8e6,    // Light blue
 };
 
 /**
- * Edge feature types for hex edges
+ * Edge feature types for hex edges (water features only)
  */
-export type EdgeFeature = "road" | "railroad" | "river" | "stream" | "bridge" | "ford";
+export type EdgeFeature = "small_stream" | "large_stream" | "small_river" | "large_river";
+
+/**
+ * Transport segment types
+ */
+export type TransportSegmentType =
+  | "trail"
+  | "small_unpaved_road"
+  | "large_unpaved_road"
+  | "small_paved_road"
+  | "large_paved_road"
+  | "railroad"
+  | "double_track_railroad"
+  | "triple_track_railroad"
+  | "runway";
+
+/**
+ * Transport segment data
+ */
+export interface TransportSegment {
+  type: TransportSegmentType;
+  entry_edges: number[];  // 0-5, using new edge numbering (0=N, clockwise)
+  exit_edges: number[];   // 0-5
+}
 
 /**
  * Overlay types for hex overlays
  */
 export type OverlayType = "minefield" | "fortification" | "trench" | "wire" | "bunker";
+
+/**
+ * Objective data for victory condition hexes
+ */
+export interface Objective {
+  name: string | null;
+  force: string | null;  // e.g., "allied", "axis", "neutral"
+}
 
 /**
  * Modifier keys state for click events
@@ -93,9 +104,11 @@ export interface TileData {
   elevation?: number;
   edges?: { [direction: number]: EdgeFeature[] };
   overlays?: OverlayType[];
+  transportSegments?: TransportSegment[];
   control?: string;
   victoryPoints?: number;
   name?: string;
+  objective?: Objective | null;
 }
 
 /**
@@ -157,6 +170,8 @@ export class Pixi2DRenderer {
   private hexGraphics: Map<string, Graphics> = new Map();
   private highlightGraphics: Map<string, Graphics> = new Map();
   private tileDataMap: Map<string, TileData> = new Map();
+  // Track auxiliary display objects (edges, overlays, transport, labels) per hex for proper cleanup
+  private auxGraphics: Map<string, Container[]> = new Map();
   private elevationPopup: Text | null = null;
   private isDragging = false;
   private dragStartPos = { x: 0, y: 0 };
@@ -424,6 +439,11 @@ export class Pixi2DRenderer {
       this.drawOverlays(tile.coord, tile.overlays);
     }
 
+    // Draw transport segments
+    if (tile.transportSegments && tile.transportSegments.length > 0) {
+      this.drawTransportSegments(tile.coord, tile.transportSegments);
+    }
+
     // Draw coordinate labels
     if (this.config.showCoords) {
       this.drawCoordLabel(tile.coord);
@@ -437,6 +457,11 @@ export class Pixi2DRenderer {
     // Draw control indicator
     if (tile.control) {
       this.drawControlIndicator(tile.coord, tile.control);
+    }
+
+    // Draw objective indicator
+    if (tile.objective) {
+      this.drawObjectiveIndicator(tile.coord, tile.objective, tile.victoryPoints || 0);
     }
 
     // Draw tile overlay text based on selected overlay mode
@@ -495,20 +520,91 @@ export class Pixi2DRenderer {
     label.y = y;
 
     this.labelContainer.addChild(label);
+    this.trackAuxGraphic(tile.coord, label);
   }
 
   /**
-   * Draw edge features (roads, rivers, etc.)
+   * Get the vertices of a hex edge (the two corner points that form the edge)
+   * Edge numbering: 0=N, 1=NE, 2=SE, 3=S, 4=SW, 5=NW
+   *
+   * For a pointy-top hex, vertices are numbered 0-5 starting at right (3 o'clock) going clockwise:
+   *   Vertex 0: Right (3 o'clock)
+   *   Vertex 1: Bottom-right (5 o'clock)
+   *   Vertex 2: Bottom-left (7 o'clock)
+   *   Vertex 3: Left (9 o'clock)
+   *   Vertex 4: Top-left (11 o'clock)
+   *   Vertex 5: Top-right (1 o'clock)
+   *
+   * Edge to vertex mapping (edge connects vertex i to vertex i+1):
+   *   Edge 0 (N):  vertices 5 and 0 (top edge)
+   *   Edge 1 (NE): vertices 0 and 1 (top-right edge)
+   *   Edge 2 (SE): vertices 1 and 2 (bottom-right edge)
+   *   Edge 3 (S):  vertices 2 and 3 (bottom edge)
+   *   Edge 4 (SW): vertices 3 and 4 (bottom-left edge)
+   *   Edge 5 (NW): vertices 4 and 5 (top-left edge)
+   */
+  private getEdgeVertices(edge: number): { v1: { x: number; y: number }; v2: { x: number; y: number } } {
+    const points = this.getHexPoints(0, 0);
+
+    // Map edge number to vertex indices
+    // Edge 0 (N) connects vertices 5 and 0
+    // Edge 1 (NE) connects vertices 0 and 1
+    // etc.
+    const vertexMap: [number, number][] = [
+      [5, 0], // Edge 0: N
+      [0, 1], // Edge 1: NE
+      [1, 2], // Edge 2: SE
+      [2, 3], // Edge 3: S
+      [3, 4], // Edge 4: SW
+      [4, 5], // Edge 5: NW
+    ];
+
+    const [v1Idx, v2Idx] = vertexMap[edge];
+
+    return {
+      v1: { x: points[v1Idx * 2], y: points[v1Idx * 2 + 1] },
+      v2: { x: points[v2Idx * 2], y: points[v2Idx * 2 + 1] },
+    };
+  }
+
+  /**
+   * Track an auxiliary display object (edge, overlay, transport, label) for a hex
+   * These are cleaned up when the hex is updated or removed
+   */
+  private trackAuxGraphic(coord: AxialCoord, displayObject: Container): void {
+    const key = `${coord.q},${coord.r}`;
+    const existing = this.auxGraphics.get(key) || [];
+    existing.push(displayObject);
+    this.auxGraphics.set(key, existing);
+  }
+
+  /**
+   * Remove all auxiliary graphics for a hex
+   */
+  private clearAuxGraphics(coord: AxialCoord): void {
+    const key = `${coord.q},${coord.r}`;
+    const objects = this.auxGraphics.get(key);
+    if (objects) {
+      for (const obj of objects) {
+        obj.parent?.removeChild(obj);
+        obj.destroy();
+      }
+      this.auxGraphics.delete(key);
+    }
+  }
+
+  /**
+   * Draw edge features (water features: streams, rivers)
+   * Edge features are drawn along the hex edge (between vertices), not from center to edge.
    */
   private drawEdgeFeatures(coord: AxialCoord, edges: { [direction: number]: EdgeFeature[] }): void {
     const { x, y } = hexToPixel(coord, this.config.hexSize);
-    const midpoints = this.getEdgeMidpoints();
 
     for (const [dirStr, features] of Object.entries(edges)) {
       const direction = parseInt(dirStr);
       if (direction < 0 || direction > 5) continue;
 
-      const midpoint = midpoints[direction];
+      const { v1, v2 } = this.getEdgeVertices(direction);
 
       for (const feature of features) {
         const edgeGraphic = new Graphics();
@@ -516,57 +612,37 @@ export class Pixi2DRenderer {
         edgeGraphic.y = y;
 
         switch (feature) {
-          case "road":
-            edgeGraphic.moveTo(0, 0);
-            edgeGraphic.lineTo(midpoint.x, midpoint.y);
-            edgeGraphic.stroke({ width: 4, color: 0x8b4513, alpha: 0.8 });
+          case "small_stream":
+            // Light blue thin line along edge
+            edgeGraphic.moveTo(v1.x, v1.y);
+            edgeGraphic.lineTo(v2.x, v2.y);
+            edgeGraphic.stroke({ width: 4, color: 0x87ceeb, alpha: 0.8 });
             break;
 
-          case "railroad":
-            edgeGraphic.moveTo(0, 0);
-            edgeGraphic.lineTo(midpoint.x, midpoint.y);
-            edgeGraphic.stroke({ width: 2, color: 0x333333, alpha: 0.9 });
-            // Railroad ties
-            const rdx = midpoint.x / 5;
-            const rdy = midpoint.y / 5;
-            for (let i = 1; i < 5; i++) {
-              const px = rdx * i;
-              const py = rdy * i;
-              const perpX = -rdy * 0.3;
-              const perpY = rdx * 0.3;
-              edgeGraphic.moveTo(px - perpX, py - perpY);
-              edgeGraphic.lineTo(px + perpX, py + perpY);
-              edgeGraphic.stroke({ width: 2, color: 0x666666 });
-            }
+          case "large_stream":
+            // Light blue medium line along edge
+            edgeGraphic.moveTo(v1.x, v1.y);
+            edgeGraphic.lineTo(v2.x, v2.y);
+            edgeGraphic.stroke({ width: 8, color: 0x87ceeb, alpha: 0.9 });
             break;
 
-          case "river":
-            edgeGraphic.moveTo(0, 0);
-            edgeGraphic.lineTo(midpoint.x, midpoint.y);
-            edgeGraphic.stroke({ width: 6, color: 0x4682b4, alpha: 0.9 });
+          case "small_river":
+            // Steel blue line along edge
+            edgeGraphic.moveTo(v1.x, v1.y);
+            edgeGraphic.lineTo(v2.x, v2.y);
+            edgeGraphic.stroke({ width: 10, color: 0x4682b4, alpha: 0.9 });
             break;
 
-          case "stream":
-            edgeGraphic.moveTo(0, 0);
-            edgeGraphic.lineTo(midpoint.x, midpoint.y);
-            edgeGraphic.stroke({ width: 3, color: 0x87ceeb, alpha: 0.8 });
-            break;
-
-          case "bridge":
-            edgeGraphic.rect(midpoint.x - 5, midpoint.y - 3, 10, 6);
-            edgeGraphic.fill(0x8b4513);
-            edgeGraphic.stroke({ width: 1, color: 0x000000 });
-            break;
-
-          case "ford":
-            // Dashed blue line
-            edgeGraphic.moveTo(0, 0);
-            edgeGraphic.lineTo(midpoint.x, midpoint.y);
-            edgeGraphic.stroke({ width: 4, color: 0x87ceeb, alpha: 0.7 });
+          case "large_river":
+            // Wide steel blue line along edge
+            edgeGraphic.moveTo(v1.x, v1.y);
+            edgeGraphic.lineTo(v2.x, v2.y);
+            edgeGraphic.stroke({ width: 16, color: 0x4682b4, alpha: 1 });
             break;
         }
 
         this.edgeContainer.addChild(edgeGraphic);
+        this.trackAuxGraphic(coord, edgeGraphic);
       }
     }
   }
@@ -629,6 +705,130 @@ export class Pixi2DRenderer {
       }
 
       this.overlayContainer.addChild(overlayGraphic);
+      this.trackAuxGraphic(coord, overlayGraphic);
+    }
+  }
+
+  /**
+   * Transport segment styling configuration
+   * Colors and widths designed for clear visual distinction:
+   * - Trails: Brown dotted (2px) - hiking paths
+   * - Unpaved roads: Tan/sand color (4px small, 6px large)
+   * - Paved roads: Dark gray (5px small, 8px large)
+   * - Railroads: Black with ties (3px single, 5px double, 7px triple)
+   * - Runway: Very wide dark gray (10px)
+   */
+  private getTransportStyle(type: TransportSegmentType): { color: number; width: number; dashed: boolean } {
+    switch (type) {
+      case "trail":
+        return { color: 0x8b4513, width: 2, dashed: true };  // Brown dotted
+      case "small_unpaved_road":
+        return { color: 0xd2a679, width: 4, dashed: false };  // Tan/sand
+      case "large_unpaved_road":
+        return { color: 0xc49a6c, width: 6, dashed: false };  // Darker tan
+      case "small_paved_road":
+        return { color: 0x505050, width: 5, dashed: false };  // Dark gray
+      case "large_paved_road":
+        return { color: 0x3a3a3a, width: 8, dashed: false };  // Darker gray
+      case "railroad":
+        return { color: 0x1a1a1a, width: 3, dashed: false };  // Near black
+      case "double_track_railroad":
+        return { color: 0x1a1a1a, width: 5, dashed: false };  // Near black, wider
+      case "triple_track_railroad":
+        return { color: 0x1a1a1a, width: 7, dashed: false };  // Near black, widest
+      case "runway":
+        return { color: 0x404040, width: 10, dashed: false };  // Gray, very wide
+      default:
+        return { color: 0x888888, width: 2, dashed: false };
+    }
+  }
+
+  /**
+   * Draw transport segments (roads, railroads, etc.)
+   * Segments connect entry edges through the center to exit edges
+   */
+  private drawTransportSegments(coord: AxialCoord, segments: TransportSegment[]): void {
+    const { x, y } = hexToPixel(coord, this.config.hexSize);
+    const midpoints = this.getEdgeMidpoints();
+
+    for (const segment of segments) {
+      const style = this.getTransportStyle(segment.type);
+      const graphic = new Graphics();
+      graphic.x = x;
+      graphic.y = y;
+
+      // Collect all edge points for this segment
+      const allEdges = [...segment.entry_edges, ...segment.exit_edges];
+
+      if (allEdges.length === 0) {
+        continue;
+      }
+
+      if (allEdges.length === 1) {
+        // Dead-end: draw from edge to center
+        const edge = allEdges[0];
+        if (edge >= 0 && edge <= 5) {
+          const mp = midpoints[edge];
+          graphic.moveTo(mp.x, mp.y);
+          graphic.lineTo(0, 0);
+          graphic.stroke({ width: style.width, color: style.color, alpha: 0.9 });
+        }
+      } else {
+        // Multiple edges: connect all edges through the center
+        for (const edge of allEdges) {
+          if (edge >= 0 && edge <= 5) {
+            const mp = midpoints[edge];
+            graphic.moveTo(0, 0);
+            graphic.lineTo(mp.x, mp.y);
+            graphic.stroke({ width: style.width, color: style.color, alpha: 0.9 });
+          }
+        }
+
+        // Draw center hub for junctions (3+ edges)
+        if (allEdges.length >= 3) {
+          graphic.circle(0, 0, style.width * 1.5);
+          graphic.fill({ color: style.color, alpha: 0.9 });
+        }
+      }
+
+      // Add railroad ties for all railroad types
+      if (segment.type === "railroad" || segment.type === "double_track_railroad" || segment.type === "triple_track_railroad") {
+        const tieWidth = segment.type === "triple_track_railroad" ? 3 :
+                         segment.type === "double_track_railroad" ? 2.5 : 2;
+        const tieScale = segment.type === "triple_track_railroad" ? 0.6 :
+                         segment.type === "double_track_railroad" ? 0.5 : 0.4;
+        for (const edge of allEdges) {
+          if (edge >= 0 && edge <= 5) {
+            const mp = midpoints[edge];
+            const dx = mp.x / 5;
+            const dy = mp.y / 5;
+            for (let i = 1; i < 5; i++) {
+              const px = dx * i;
+              const py = dy * i;
+              const perpX = -dy * tieScale;
+              const perpY = dx * tieScale;
+              graphic.moveTo(px - perpX, py - perpY);
+              graphic.lineTo(px + perpX, py + perpY);
+              graphic.stroke({ width: tieWidth, color: 0x6b4423 });  // Brown ties
+            }
+          }
+        }
+      }
+
+      // Add runway markings (white center line)
+      if (segment.type === "runway") {
+        for (const edge of allEdges) {
+          if (edge >= 0 && edge <= 5) {
+            const mp = midpoints[edge];
+            graphic.moveTo(0, 0);
+            graphic.lineTo(mp.x, mp.y);
+            graphic.stroke({ width: 1, color: 0xffffff, alpha: 0.9 });
+          }
+        }
+      }
+
+      this.overlayContainer.addChild(graphic);
+      this.trackAuxGraphic(coord, graphic);
     }
   }
 
@@ -650,6 +850,7 @@ export class Pixi2DRenderer {
     label.y = y + this.config.hexSize * 0.6;
 
     this.labelContainer.addChild(label);
+    this.trackAuxGraphic(coord, label);
   }
 
   /**
@@ -675,9 +876,11 @@ export class Pixi2DRenderer {
       label.x = x;
       label.y = y - this.config.hexSize * 0.4;
       this.labelContainer.addChild(label);
+      this.trackAuxGraphic(coord, label);
     }
 
     this.overlayContainer.addChild(indicator);
+    this.trackAuxGraphic(coord, indicator);
   }
 
   /**
@@ -704,6 +907,97 @@ export class Pixi2DRenderer {
     flag.fill(flagColor);
 
     this.overlayContainer.addChild(flag);
+    this.trackAuxGraphic(coord, flag);
+  }
+
+  /**
+   * Draw objective indicator (star icon with name label)
+   */
+  private drawObjectiveIndicator(coord: AxialCoord, objective: Objective, victoryPoints: number): void {
+    const { x, y } = hexToPixel(coord, this.config.hexSize);
+    const graphics = new Graphics();
+
+    // Color based on force
+    const forceColor = this.getForceColor(objective.force);
+
+    // Draw star in center of hex
+    const starSize = this.config.hexSize * 0.25;
+    this.drawStar(graphics, x, y - 5, starSize, forceColor);
+
+    this.overlayContainer.addChild(graphics);
+    this.trackAuxGraphic(coord, graphics);
+
+    // Draw objective name if present
+    if (objective.name) {
+      const labelStyle = new TextStyle({
+        fontSize: 9,
+        fill: 0xffffff,
+        stroke: { color: 0x000000, width: 2 },
+        fontWeight: "bold",
+      });
+
+      const label = new Text({ text: objective.name, style: labelStyle });
+      label.anchor.set(0.5, 0);
+      label.x = x;
+      label.y = y + 5;
+
+      this.overlayContainer.addChild(label);
+      this.trackAuxGraphic(coord, label);
+    }
+  }
+
+  /**
+   * Draw a 5-pointed star
+   */
+  private drawStar(graphics: Graphics, cx: number, cy: number, size: number, color: number): void {
+    const points = 5;
+    const outerRadius = size;
+    const innerRadius = size * 0.4;
+    const angleStep = Math.PI / points;
+
+    graphics.moveTo(
+      cx + outerRadius * Math.cos(-Math.PI / 2),
+      cy + outerRadius * Math.sin(-Math.PI / 2)
+    );
+
+    for (let i = 0; i < points * 2; i++) {
+      const radius = i % 2 === 0 ? outerRadius : innerRadius;
+      const angle = -Math.PI / 2 + angleStep * i;
+      graphics.lineTo(
+        cx + radius * Math.cos(angle),
+        cy + radius * Math.sin(angle)
+      );
+    }
+
+    graphics.closePath();
+    graphics.fill(color);
+    graphics.stroke({ width: 1, color: 0x000000 });
+  }
+
+  /**
+   * Get color for a force
+   */
+  private getForceColor(force: string | null): number {
+    if (!force) return 0xffd700; // Gold for neutral
+
+    switch (force.toLowerCase()) {
+      case "allied":
+      case "american":
+      case "british":
+      case "french":
+        return 0x0066cc; // Blue
+      case "axis":
+      case "german":
+      case "italian":
+        return 0x333333; // Dark gray
+      case "soviet":
+      case "russian":
+        return 0xcc0000; // Red
+      case "japanese":
+        return 0xff6600; // Orange
+      default:
+        return 0xffd700; // Gold for unknown
+    }
   }
 
   /**
@@ -921,9 +1215,8 @@ export class Pixi2DRenderer {
       this.hexGraphics.delete(key);
     }
 
-    // Remove old edge/overlay graphics for this hex (they're not tracked individually,
-    // so we need to redraw the hex which will add new ones)
-    // For now, we just draw the new hex on top - a full solution would track all graphics per hex
+    // Remove old auxiliary graphics (edges, overlays, transport segments, labels)
+    this.clearAuxGraphics(tile.coord);
 
     // Draw the new hex
     this.drawHex(tile);
@@ -968,6 +1261,7 @@ export class Pixi2DRenderer {
     this.labelContainer.removeChildren();
     this.hexGraphics.clear();
     this.tileDataMap.clear();
+    this.auxGraphics.clear();
     // Destroy elevation popup since labelContainer.removeChildren() removed it
     if (this.elevationPopup) {
       this.elevationPopup.destroy();

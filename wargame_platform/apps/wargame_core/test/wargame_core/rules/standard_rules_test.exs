@@ -128,7 +128,7 @@ defmodule WargameCore.Rules.StandardRulesTest do
       state = create_game_state(units: %{unit.id => unit})
 
       # Set lake in path
-      {:ok, map} = GameMap.set_terrain(state.map, Coord.new(1, 0), :lake)
+      {:ok, map} = GameMap.set_terrain(state.map, Coord.new(1, 0), :freshwater_lake)
       state = %{state | map: map}
 
       path = [Coord.new(0, 0), Coord.new(1, 0), Coord.new(2, 0)]
@@ -313,7 +313,7 @@ defmodule WargameCore.Rules.StandardRulesTest do
       state = create_game_state(units: units, phases: phases)
 
       # Set urban terrain (defense +3)
-      {:ok, map} = GameMap.set_terrain(state.map, Coord.new(1, 0), :urban)
+      {:ok, map} = GameMap.set_terrain(state.map, Coord.new(1, 0), :heavy_urban)
       state = %{state | map: map}
 
       assert {:ok, odds} =
@@ -412,7 +412,7 @@ defmodule WargameCore.Rules.StandardRulesTest do
       unit = create_unit(category: :infantry)
       state = create_game_state(units: %{unit.id => unit})
 
-      {:ok, map} = GameMap.set_terrain(state.map, Coord.new(1, 0), :lake)
+      {:ok, map} = GameMap.set_terrain(state.map, Coord.new(1, 0), :freshwater_lake)
       state = %{state | map: map}
 
       cost = StandardRules.movement_cost(state, unit.id, Coord.new(1, 0), nil)

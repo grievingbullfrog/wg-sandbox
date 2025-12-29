@@ -21,10 +21,13 @@ defmodule WargameCore.Map do
           id: String.t() | nil,
           name: String.t(),
           description: String.t(),
+          version: String.t(),
           width: pos_integer(),
           height: pos_integer(),
           scale: pos_integer(),
           base_elevation: integer(),
+          centerpoint_lat: float() | nil,
+          centerpoint_lng: float() | nil,
           tiles: %{Coord.t() => Tile.t()},
           default_terrain: atom(),
           metadata: map()
@@ -38,7 +41,10 @@ defmodule WargameCore.Map do
     :height,
     :scale,
     description: "",
+    version: "1.0",
     base_elevation: 0,
+    centerpoint_lat: nil,
+    centerpoint_lng: nil,
     tiles: %{},
     default_terrain: :clear,
     metadata: %{}
@@ -57,7 +63,10 @@ defmodule WargameCore.Map do
   - opts: Optional parameters
     - :default_terrain - Terrain type for all initial tiles (default: :clear)
     - :description - Map description
+    - :version - Map version string (default: "1.0")
     - :base_elevation - Base elevation in meters (default: 0)
+    - :centerpoint_lat - Latitude of map center (default: nil)
+    - :centerpoint_lng - Longitude of map center (default: nil)
 
   ## Examples
 
@@ -72,7 +81,10 @@ defmodule WargameCore.Map do
       when is_binary(name) and width > 0 and height > 0 and scale > 0 do
     default_terrain = Keyword.get(opts, :default_terrain, :clear)
     description = Keyword.get(opts, :description, "")
+    version = Keyword.get(opts, :version, "1.0")
     base_elevation = Keyword.get(opts, :base_elevation, 0)
+    centerpoint_lat = Keyword.get(opts, :centerpoint_lat, nil)
+    centerpoint_lng = Keyword.get(opts, :centerpoint_lng, nil)
 
     tiles =
       for q <- 0..(width - 1), r <- 0..(height - 1), into: %{} do
@@ -85,7 +97,10 @@ defmodule WargameCore.Map do
       width: width,
       height: height,
       scale: scale,
+      version: version,
       base_elevation: base_elevation,
+      centerpoint_lat: centerpoint_lat,
+      centerpoint_lng: centerpoint_lng,
       description: description,
       tiles: tiles,
       default_terrain: default_terrain

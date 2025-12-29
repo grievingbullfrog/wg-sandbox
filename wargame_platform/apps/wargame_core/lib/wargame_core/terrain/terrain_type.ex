@@ -64,23 +64,19 @@ defmodule WargameCore.Terrain.TerrainType do
       clear(),
       forest_pine(),
       forest_deciduous(),
-      hill(),
-      mountain(),
-      desert(),
-      farmland(),
-      pasture(),
-      swamp(),
       marsh(),
-      lake(),
-      river(),
+      orchard(),
+      light_urban(),
+      heavy_urban(),
+      industrial(),
+      desert(),
+      semi_arid(),
+      tundra(),
+      arctic(),
+      freshwater_lake(),
+      frozen_lake(),
       ocean(),
-      urban(),
-      village(),
-      ruins(),
-      road(),
-      railroad(),
-      fortification(),
-      minefield()
+      frozen_ocean()
     ]
   end
 
@@ -154,46 +150,6 @@ defmodule WargameCore.Terrain.TerrainType do
     }
   end
 
-  def hill do
-    %__MODULE__{
-      id: :hill,
-      name: "Hill",
-      movement_costs: %{
-        infantry: 2,
-        armor: 2,
-        motorized: 2,
-        artillery: 2,
-        recon: 2,
-        engineer: 2
-      },
-      defense_modifier: 1,
-      blocks_los: false,
-      concealment: false,
-      fortifiable: true,
-      color: 0xA0522D
-    }
-  end
-
-  def mountain do
-    %__MODULE__{
-      id: :mountain,
-      name: "Mountain",
-      movement_costs: %{
-        infantry: 3,
-        armor: :impassable,
-        motorized: :impassable,
-        artillery: :impassable,
-        recon: 4,
-        engineer: 3
-      },
-      defense_modifier: 3,
-      blocks_los: true,
-      concealment: false,
-      fortifiable: true,
-      color: 0x808080
-    }
-  end
-
   def desert do
     %__MODULE__{
       id: :desert,
@@ -211,66 +167,6 @@ defmodule WargameCore.Terrain.TerrainType do
       concealment: false,
       fortifiable: true,
       color: 0xF4A460
-    }
-  end
-
-  def farmland do
-    %__MODULE__{
-      id: :farmland,
-      name: "Farmland",
-      movement_costs: %{
-        infantry: 1,
-        armor: 1,
-        motorized: 1,
-        artillery: 1,
-        recon: 1,
-        engineer: 1
-      },
-      defense_modifier: 0,
-      blocks_los: false,
-      concealment: true,
-      fortifiable: true,
-      color: 0xDAA520
-    }
-  end
-
-  def pasture do
-    %__MODULE__{
-      id: :pasture,
-      name: "Pasture",
-      movement_costs: %{
-        infantry: 1,
-        armor: 1,
-        motorized: 1,
-        artillery: 1,
-        recon: 1,
-        engineer: 1
-      },
-      defense_modifier: 0,
-      blocks_los: false,
-      concealment: false,
-      fortifiable: true,
-      color: 0x98FB98
-    }
-  end
-
-  def swamp do
-    %__MODULE__{
-      id: :swamp,
-      name: "Swamp",
-      movement_costs: %{
-        infantry: 3,
-        armor: :impassable,
-        motorized: :impassable,
-        artillery: :impassable,
-        recon: 4,
-        engineer: 3
-      },
-      defense_modifier: 1,
-      blocks_los: false,
-      concealment: true,
-      fortifiable: false,
-      color: 0x556B2F
     }
   end
 
@@ -294,10 +190,10 @@ defmodule WargameCore.Terrain.TerrainType do
     }
   end
 
-  def lake do
+  def freshwater_lake do
     %__MODULE__{
-      id: :lake,
-      name: "Lake",
+      id: :freshwater_lake,
+      name: "Freshwater Lake",
       movement_costs: %{
         infantry: :impassable,
         armor: :impassable,
@@ -311,26 +207,6 @@ defmodule WargameCore.Terrain.TerrainType do
       concealment: false,
       fortifiable: false,
       color: 0x4169E1
-    }
-  end
-
-  def river do
-    %__MODULE__{
-      id: :river,
-      name: "River",
-      movement_costs: %{
-        infantry: :impassable,
-        armor: :impassable,
-        motorized: :impassable,
-        artillery: :impassable,
-        recon: :impassable,
-        engineer: 4
-      },
-      defense_modifier: 0,
-      blocks_los: false,
-      concealment: false,
-      fortifiable: false,
-      color: 0x1E90FF
     }
   end
 
@@ -354,35 +230,15 @@ defmodule WargameCore.Terrain.TerrainType do
     }
   end
 
-  def urban do
+  def light_urban do
     %__MODULE__{
-      id: :urban,
-      name: "Urban",
+      id: :light_urban,
+      name: "Light Urban",
       movement_costs: %{
         infantry: 1,
         armor: 2,
         motorized: 1,
         artillery: 2,
-        recon: 1,
-        engineer: 1
-      },
-      defense_modifier: 3,
-      blocks_los: true,
-      concealment: true,
-      fortifiable: true,
-      color: 0x696969
-    }
-  end
-
-  def village do
-    %__MODULE__{
-      id: :village,
-      name: "Village",
-      movement_costs: %{
-        infantry: 1,
-        armor: 1,
-        motorized: 1,
-        artillery: 1,
         recon: 1,
         engineer: 1
       },
@@ -394,50 +250,50 @@ defmodule WargameCore.Terrain.TerrainType do
     }
   end
 
-  def ruins do
+  def heavy_urban do
     %__MODULE__{
-      id: :ruins,
-      name: "Ruins",
+      id: :heavy_urban,
+      name: "Heavy Urban",
+      movement_costs: %{
+        infantry: 2,
+        armor: 3,
+        motorized: 2,
+        artillery: 3,
+        recon: 2,
+        engineer: 2
+      },
+      defense_modifier: 3,
+      blocks_los: true,
+      concealment: true,
+      fortifiable: true,
+      color: 0x696969
+    }
+  end
+
+  def orchard do
+    %__MODULE__{
+      id: :orchard,
+      name: "Orchard",
       movement_costs: %{
         infantry: 2,
         armor: 2,
         motorized: 2,
         artillery: 2,
         recon: 2,
-        engineer: 1
+        engineer: 2
       },
-      defense_modifier: 2,
+      defense_modifier: 1,
       blocks_los: true,
       concealment: true,
       fortifiable: true,
-      color: 0x8B4513
+      color: 0x9ACD32
     }
   end
 
-  def road do
+  def semi_arid do
     %__MODULE__{
-      id: :road,
-      name: "Road",
-      movement_costs: %{
-        infantry: 0.5,
-        armor: 0.5,
-        motorized: 0.5,
-        artillery: 0.5,
-        recon: 0.5,
-        engineer: 0.5
-      },
-      defense_modifier: -1,
-      blocks_los: false,
-      concealment: false,
-      fortifiable: false,
-      color: 0xD2B48C
-    }
-  end
-
-  def railroad do
-    %__MODULE__{
-      id: :railroad,
-      name: "Railroad",
+      id: :semi_arid,
+      name: "Semi-Arid",
       movement_costs: %{
         infantry: 1,
         armor: 1,
@@ -446,51 +302,111 @@ defmodule WargameCore.Terrain.TerrainType do
         recon: 1,
         engineer: 1
       },
-      defense_modifier: -1,
+      defense_modifier: 0,
       blocks_los: false,
       concealment: false,
-      fortifiable: false,
-      color: 0x4A4A4A
-    }
-  end
-
-  def fortification do
-    %__MODULE__{
-      id: :fortification,
-      name: "Fortification",
-      movement_costs: %{
-        infantry: 1,
-        armor: :impassable,
-        motorized: :impassable,
-        artillery: :impassable,
-        recon: 2,
-        engineer: 1
-      },
-      defense_modifier: 4,
-      blocks_los: false,
-      concealment: true,
       fortifiable: true,
-      color: 0x654321
+      color: 0xC2B280
     }
   end
 
-  def minefield do
+  def tundra do
     %__MODULE__{
-      id: :minefield,
-      name: "Minefield",
+      id: :tundra,
+      name: "Tundra",
       movement_costs: %{
-        infantry: 3,
-        armor: 4,
-        motorized: 4,
-        artillery: 4,
-        recon: 3,
+        infantry: 2,
+        armor: 2,
+        motorized: 2,
+        artillery: 2,
+        recon: 2,
         engineer: 2
       },
       defense_modifier: 0,
       blocks_los: false,
       concealment: false,
+      fortifiable: true,
+      color: 0x8B8682
+    }
+  end
+
+  def arctic do
+    %__MODULE__{
+      id: :arctic,
+      name: "Arctic",
+      movement_costs: %{
+        infantry: 3,
+        armor: 3,
+        motorized: 3,
+        artillery: 3,
+        recon: 3,
+        engineer: 3
+      },
+      defense_modifier: 0,
+      blocks_los: false,
+      concealment: false,
       fortifiable: false,
-      color: 0xFF6347
+      color: 0xE8E8E8
+    }
+  end
+
+  def frozen_lake do
+    %__MODULE__{
+      id: :frozen_lake,
+      name: "Frozen Lake",
+      movement_costs: %{
+        infantry: 1,
+        armor: 2,
+        motorized: 2,
+        artillery: 2,
+        recon: 1,
+        engineer: 1
+      },
+      defense_modifier: -1,
+      blocks_los: false,
+      concealment: false,
+      fortifiable: false,
+      color: 0xB0E0E6
+    }
+  end
+
+  def frozen_ocean do
+    %__MODULE__{
+      id: :frozen_ocean,
+      name: "Frozen Ocean",
+      movement_costs: %{
+        infantry: 2,
+        armor: 2,
+        motorized: 2,
+        artillery: 2,
+        recon: 2,
+        engineer: 2
+      },
+      defense_modifier: -1,
+      blocks_los: false,
+      concealment: false,
+      fortifiable: false,
+      color: 0xADD8E6
+    }
+  end
+
+  def industrial do
+    %__MODULE__{
+      id: :industrial,
+      name: "Industrial",
+      movement_costs: %{
+        infantry: 2,
+        armor: 2,
+        motorized: 2,
+        artillery: 2,
+        recon: 2,
+        engineer: 2
+      },
+      defense_modifier: 2,
+      blocks_los: true,
+      concealment: true,
+      fortifiable: true,
+      color: 0x505050
     }
   end
 end

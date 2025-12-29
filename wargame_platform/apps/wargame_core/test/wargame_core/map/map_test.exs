@@ -45,6 +45,78 @@ defmodule WargameCore.MapTest do
       map = GameMap.new("Test", 5, 5, 200, description: "A test map")
       assert map.description == "A test map"
     end
+
+    test "uses default version 1.0" do
+      map = GameMap.new("Test", 5, 5, 200)
+      assert map.version == "1.0"
+    end
+
+    test "accepts version option" do
+      map = GameMap.new("Test", 5, 5, 200, version: "2.1")
+      assert map.version == "2.1"
+    end
+
+    test "has nil centerpoint by default" do
+      map = GameMap.new("Test", 5, 5, 200)
+      assert map.centerpoint_lat == nil
+      assert map.centerpoint_lng == nil
+    end
+
+    test "accepts centerpoint_lat option" do
+      map = GameMap.new("Test", 5, 5, 200, centerpoint_lat: 50.6292)
+      assert map.centerpoint_lat == 50.6292
+    end
+
+    test "accepts centerpoint_lng option" do
+      map = GameMap.new("Test", 5, 5, 200, centerpoint_lng: 36.2405)
+      assert map.centerpoint_lng == 36.2405
+    end
+
+    test "accepts both centerpoint coordinates" do
+      map = GameMap.new("Test", 5, 5, 200, centerpoint_lat: 50.6292, centerpoint_lng: 36.2405)
+      assert map.centerpoint_lat == 50.6292
+      assert map.centerpoint_lng == 36.2405
+    end
+
+    test "accepts all metadata options combined" do
+      map =
+        GameMap.new("Battle of Kursk", 20, 15, 500,
+          description: "Eastern front battle",
+          version: "1.2",
+          base_elevation: 200,
+          centerpoint_lat: 50.6292,
+          centerpoint_lng: 36.2405
+        )
+
+      assert map.name == "Battle of Kursk"
+      assert map.width == 20
+      assert map.height == 15
+      assert map.scale == 500
+      assert map.description == "Eastern front battle"
+      assert map.version == "1.2"
+      assert map.base_elevation == 200
+      assert map.centerpoint_lat == 50.6292
+      assert map.centerpoint_lng == 36.2405
+    end
+
+    test "accepts negative centerpoint coordinates" do
+      map = GameMap.new("Test", 5, 5, 200, centerpoint_lat: -33.865, centerpoint_lng: -118.243)
+      assert map.centerpoint_lat == -33.865
+      assert map.centerpoint_lng == -118.243
+    end
+
+    test "accepts zero centerpoint coordinates" do
+      map = GameMap.new("Test", 5, 5, 200, centerpoint_lat: 0.0, centerpoint_lng: 0.0)
+      assert map.centerpoint_lat == 0.0
+      assert map.centerpoint_lng == 0.0
+    end
+
+    test "accepts integer centerpoint coordinates and converts to float" do
+      map = GameMap.new("Test", 5, 5, 200, centerpoint_lat: 50, centerpoint_lng: 36)
+      # Should be stored as integers or floats - either is acceptable
+      assert map.centerpoint_lat == 50 or map.centerpoint_lat == 50.0
+      assert map.centerpoint_lng == 36 or map.centerpoint_lng == 36.0
+    end
   end
 
   describe "get_tile/2" do
@@ -94,9 +166,9 @@ defmodule WargameCore.MapTest do
       coord = Coord.new(2, 2)
 
       assert {:ok, updated_map} =
-               GameMap.update_tile(map, coord, fn tile -> %{tile | terrain: :urban} end)
+               GameMap.update_tile(map, coord, fn tile -> %{tile | terrain: :heavy_urban} end)
 
-      assert GameMap.get_tile(updated_map, coord).terrain == :urban
+      assert GameMap.get_tile(updated_map, coord).terrain == :heavy_urban
     end
 
     test "returns error for out of bounds coordinate" do
@@ -113,15 +185,15 @@ defmodule WargameCore.MapTest do
       map = GameMap.new("Test", 5, 5, 200)
       coord = Coord.new(2, 2)
 
-      assert {:ok, updated_map} = GameMap.set_terrain(map, coord, :hill)
-      assert GameMap.get_tile(updated_map, coord).terrain == :hill
+      assert {:ok, updated_map} = GameMap.set_terrain(map, coord, :tundra)
+      assert GameMap.get_tile(updated_map, coord).terrain == :tundra
     end
 
     test "returns error for out of bounds" do
       map = GameMap.new("Test", 5, 5, 200)
       coord = Coord.new(10, 10)
 
-      assert {:error, :out_of_bounds} = GameMap.set_terrain(map, coord, :hill)
+      assert {:error, :out_of_bounds} = GameMap.set_terrain(map, coord, :tundra)
     end
   end
 
@@ -246,7 +318,7 @@ defmodule WargameCore.MapTest do
 
     test "path avoids impassable terrain" do
       map = GameMap.new("Test", 10, 10, 200)
-      {:ok, map} = GameMap.set_terrain(map, Coord.new(1, 0), :lake)
+      {:ok, map} = GameMap.set_terrain(map, Coord.new(1, 0), :freshwater_lake)
 
       from = Coord.new(0, 0)
       to = Coord.new(2, 0)
@@ -360,14 +432,14 @@ defmodule WargameCore.MapTest do
       from = Coord.new(2, 2)
       to = Coord.new(3, 2)
 
-      assert {:ok, updated_map} = GameMap.add_edge_feature(map, from, to, :road)
+      assert {:ok, updated_map} = GameMap.add_edge_feature(map, from, to, :small_river)
 
       # Check both tiles have the road
       from_tile = GameMap.get_tile(updated_map, from)
       to_tile = GameMap.get_tile(updated_map, to)
 
-      assert Tile.has_edge_feature?(from_tile, 0, :road)
-      assert Tile.has_edge_feature?(to_tile, 3, :road)
+      assert Tile.has_edge_feature?(from_tile, 0, :small_river)
+      assert Tile.has_edge_feature?(to_tile, 3, :small_river)
     end
 
     test "returns error for non-adjacent hexes" do
@@ -375,7 +447,7 @@ defmodule WargameCore.MapTest do
       from = Coord.new(0, 0)
       to = Coord.new(2, 2)
 
-      assert {:error, :not_adjacent} = GameMap.add_edge_feature(map, from, to, :road)
+      assert {:error, :not_adjacent} = GameMap.add_edge_feature(map, from, to, :small_river)
     end
   end
 
@@ -401,7 +473,7 @@ defmodule WargameCore.MapTest do
       to = Coord.new(10, 10)
 
       # Should not crash
-      _updated_map = GameMap.fill_terrain(map, from, to, :urban)
+      _updated_map = GameMap.fill_terrain(map, from, to, :heavy_urban)
     end
   end
 

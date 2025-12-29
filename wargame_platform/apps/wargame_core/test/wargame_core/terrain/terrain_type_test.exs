@@ -7,7 +7,7 @@ defmodule WargameCore.Terrain.TerrainTypeTest do
     test "returns list of all terrain types" do
       all = TerrainType.all()
       assert is_list(all)
-      assert length(all) == 20
+      assert length(all) == 16
     end
 
     test "all terrain types have required fields" do
@@ -45,23 +45,19 @@ defmodule WargameCore.Terrain.TerrainTypeTest do
         :clear,
         :forest_pine,
         :forest_deciduous,
-        :hill,
-        :mountain,
-        :desert,
-        :farmland,
-        :pasture,
-        :swamp,
         :marsh,
-        :lake,
-        :river,
+        :orchard,
+        :light_urban,
+        :heavy_urban,
+        :industrial,
+        :desert,
+        :semi_arid,
+        :tundra,
+        :arctic,
+        :freshwater_lake,
+        :frozen_lake,
         :ocean,
-        :urban,
-        :village,
-        :ruins,
-        :road,
-        :railroad,
-        :fortification,
-        :minefield
+        :frozen_ocean
       ]
 
       Enum.each(terrain_ids, fn id ->
@@ -85,19 +81,13 @@ defmodule WargameCore.Terrain.TerrainTypeTest do
     end
 
     test "returns :impassable for impassable terrain" do
-      terrain = TerrainType.lake()
+      terrain = TerrainType.freshwater_lake()
       assert TerrainType.movement_cost(terrain, :infantry) == :impassable
     end
 
-    test "armor cannot enter mountains" do
-      terrain = TerrainType.mountain()
+    test "ocean is impassable for armor" do
+      terrain = TerrainType.ocean()
       assert TerrainType.movement_cost(terrain, :armor) == :impassable
-    end
-
-    test "roads have reduced movement cost" do
-      terrain = TerrainType.road()
-      assert TerrainType.movement_cost(terrain, :infantry) == 0.5
-      assert TerrainType.movement_cost(terrain, :armor) == 0.5
     end
   end
 
@@ -141,48 +131,29 @@ defmodule WargameCore.Terrain.TerrainTypeTest do
     end
   end
 
-  describe "mountain/0" do
-    test "is impassable for vehicles" do
-      terrain = TerrainType.mountain()
+  describe "marsh/0" do
+    test "has correct properties" do
+      terrain = TerrainType.marsh()
 
-      assert TerrainType.movement_cost(terrain, :armor) == :impassable
-      assert TerrainType.movement_cost(terrain, :motorized) == :impassable
-      assert TerrainType.movement_cost(terrain, :artillery) == :impassable
-    end
-
-    test "infantry can enter but slowly" do
-      terrain = TerrainType.mountain()
-      assert TerrainType.movement_cost(terrain, :infantry) == 3
-    end
-
-    test "provides strong defense" do
-      terrain = TerrainType.mountain()
-      assert terrain.defense_modifier == 3
-    end
-  end
-
-  describe "swamp/0" do
-    test "is impassable for vehicles" do
-      terrain = TerrainType.swamp()
-
-      assert TerrainType.movement_cost(terrain, :armor) == :impassable
-      assert TerrainType.movement_cost(terrain, :motorized) == :impassable
-    end
-
-    test "is not fortifiable" do
-      terrain = TerrainType.swamp()
+      assert terrain.id == :marsh
+      assert terrain.defense_modifier == 1
+      refute terrain.blocks_los
+      assert terrain.concealment
       refute terrain.fortifiable
     end
 
-    test "provides concealment" do
-      terrain = TerrainType.swamp()
-      assert terrain.concealment
+    test "slows vehicles more than infantry" do
+      terrain = TerrainType.marsh()
+
+      assert TerrainType.movement_cost(terrain, :infantry) == 2
+      assert TerrainType.movement_cost(terrain, :armor) == 3
+      assert TerrainType.movement_cost(terrain, :motorized) == 4
     end
   end
 
-  describe "lake/0" do
+  describe "freshwater_lake/0" do
     test "is impassable for all ground units" do
-      terrain = TerrainType.lake()
+      terrain = TerrainType.freshwater_lake()
 
       Enum.each([:infantry, :armor, :motorized, :artillery, :recon, :engineer], fn category ->
         assert TerrainType.movement_cost(terrain, category) == :impassable
@@ -190,88 +161,241 @@ defmodule WargameCore.Terrain.TerrainTypeTest do
     end
 
     test "is not fortifiable" do
-      terrain = TerrainType.lake()
+      terrain = TerrainType.freshwater_lake()
       refute terrain.fortifiable
     end
   end
 
-  describe "urban/0" do
-    test "provides strong defense" do
-      terrain = TerrainType.urban()
-      assert terrain.defense_modifier == 3
+  describe "light_urban/0" do
+    test "provides good defense" do
+      terrain = TerrainType.light_urban()
+      assert terrain.defense_modifier == 2
     end
 
     test "blocks LOS" do
-      terrain = TerrainType.urban()
+      terrain = TerrainType.light_urban()
       assert terrain.blocks_los
     end
 
     test "provides concealment" do
-      terrain = TerrainType.urban()
+      terrain = TerrainType.light_urban()
       assert terrain.concealment
     end
 
     test "slows armor" do
-      terrain = TerrainType.urban()
+      terrain = TerrainType.light_urban()
       assert TerrainType.movement_cost(terrain, :armor) == 2
     end
   end
 
-  describe "road/0" do
-    test "has reduced movement cost" do
-      terrain = TerrainType.road()
+  describe "heavy_urban/0" do
+    test "provides strong defense" do
+      terrain = TerrainType.heavy_urban()
+      assert terrain.defense_modifier == 3
+    end
+
+    test "blocks LOS" do
+      terrain = TerrainType.heavy_urban()
+      assert terrain.blocks_los
+    end
+
+    test "provides concealment" do
+      terrain = TerrainType.heavy_urban()
+      assert terrain.concealment
+    end
+
+    test "slows all units" do
+      terrain = TerrainType.heavy_urban()
+      assert TerrainType.movement_cost(terrain, :infantry) == 2
+      assert TerrainType.movement_cost(terrain, :armor) == 3
+    end
+  end
+
+  describe "desert/0" do
+    test "has correct properties" do
+      terrain = TerrainType.desert()
+
+      assert terrain.id == :desert
+      assert terrain.defense_modifier == 0
+      refute terrain.blocks_los
+      refute terrain.concealment
+      assert terrain.fortifiable
+    end
+
+    test "has standard movement cost" do
+      terrain = TerrainType.desert()
 
       Enum.each([:infantry, :armor, :motorized, :artillery, :recon, :engineer], fn category ->
-        assert TerrainType.movement_cost(terrain, category) == 0.5
+        assert TerrainType.movement_cost(terrain, category) == 1
+      end)
+    end
+  end
+
+  describe "ocean/0" do
+    test "is impassable for all ground units" do
+      terrain = TerrainType.ocean()
+
+      Enum.each([:infantry, :armor, :motorized, :artillery, :recon, :engineer], fn category ->
+        assert TerrainType.movement_cost(terrain, category) == :impassable
       end)
     end
 
-    test "has negative defense modifier" do
-      terrain = TerrainType.road()
-      assert terrain.defense_modifier == -1
-    end
-
     test "is not fortifiable" do
-      terrain = TerrainType.road()
+      terrain = TerrainType.ocean()
       refute terrain.fortifiable
     end
   end
 
-  describe "fortification/0" do
-    test "blocks vehicles" do
-      terrain = TerrainType.fortification()
+  describe "orchard/0" do
+    test "has correct properties" do
+      terrain = TerrainType.orchard()
 
-      assert TerrainType.movement_cost(terrain, :armor) == :impassable
-      assert TerrainType.movement_cost(terrain, :motorized) == :impassable
+      assert terrain.id == :orchard
+      assert terrain.name == "Orchard"
+      assert terrain.defense_modifier == 1
+      assert terrain.blocks_los
+      assert terrain.concealment
+      assert terrain.fortifiable
+      assert terrain.color == 0x9ACD32
     end
 
-    test "allows infantry" do
-      terrain = TerrainType.fortification()
-      assert TerrainType.movement_cost(terrain, :infantry) == 1
-    end
+    test "has moderate movement cost for all units" do
+      terrain = TerrainType.orchard()
 
-    test "provides very strong defense" do
-      terrain = TerrainType.fortification()
-      assert terrain.defense_modifier == 4
+      Enum.each([:infantry, :armor, :motorized, :artillery, :recon, :engineer], fn category ->
+        assert TerrainType.movement_cost(terrain, category) == 2
+      end)
     end
   end
 
-  describe "minefield/0" do
-    test "has high movement cost for all units" do
-      terrain = TerrainType.minefield()
+  describe "semi_arid/0" do
+    test "has correct properties" do
+      terrain = TerrainType.semi_arid()
 
-      assert TerrainType.movement_cost(terrain, :infantry) == 3
-      assert TerrainType.movement_cost(terrain, :armor) == 4
-    end
-
-    test "engineers have lower cost" do
-      terrain = TerrainType.minefield()
-      assert TerrainType.movement_cost(terrain, :engineer) == 2
-    end
-
-    test "provides no defense modifier" do
-      terrain = TerrainType.minefield()
+      assert terrain.id == :semi_arid
+      assert terrain.name == "Semi-Arid"
       assert terrain.defense_modifier == 0
+      refute terrain.blocks_los
+      refute terrain.concealment
+      assert terrain.fortifiable
+      assert terrain.color == 0xC2B280
+    end
+
+    test "has standard movement cost like clear" do
+      terrain = TerrainType.semi_arid()
+
+      Enum.each([:infantry, :armor, :motorized, :artillery, :recon, :engineer], fn category ->
+        assert TerrainType.movement_cost(terrain, category) == 1
+      end)
+    end
+  end
+
+  describe "tundra/0" do
+    test "has correct properties" do
+      terrain = TerrainType.tundra()
+
+      assert terrain.id == :tundra
+      assert terrain.name == "Tundra"
+      assert terrain.defense_modifier == 0
+      refute terrain.blocks_los
+      refute terrain.concealment
+      assert terrain.fortifiable
+      assert terrain.color == 0x8B8682
+    end
+
+    test "has moderate movement cost for all units" do
+      terrain = TerrainType.tundra()
+
+      Enum.each([:infantry, :armor, :motorized, :artillery, :recon, :engineer], fn category ->
+        assert TerrainType.movement_cost(terrain, category) == 2
+      end)
+    end
+  end
+
+  describe "arctic/0" do
+    test "has correct properties" do
+      terrain = TerrainType.arctic()
+
+      assert terrain.id == :arctic
+      assert terrain.name == "Arctic"
+      assert terrain.defense_modifier == 0
+      refute terrain.blocks_los
+      refute terrain.concealment
+      refute terrain.fortifiable
+      assert terrain.color == 0xE8E8E8
+    end
+
+    test "has high movement cost for all units" do
+      terrain = TerrainType.arctic()
+
+      Enum.each([:infantry, :armor, :motorized, :artillery, :recon, :engineer], fn category ->
+        assert TerrainType.movement_cost(terrain, category) == 3
+      end)
+    end
+  end
+
+  describe "frozen_lake/0" do
+    test "has correct properties" do
+      terrain = TerrainType.frozen_lake()
+
+      assert terrain.id == :frozen_lake
+      assert terrain.name == "Frozen Lake"
+      assert terrain.defense_modifier == -1
+      refute terrain.blocks_los
+      refute terrain.concealment
+      refute terrain.fortifiable
+      assert terrain.color == 0xB0E0E6
+    end
+
+    test "infantry moves easily, armor slowed" do
+      terrain = TerrainType.frozen_lake()
+
+      assert TerrainType.movement_cost(terrain, :infantry) == 1
+      assert TerrainType.movement_cost(terrain, :armor) == 2
+    end
+  end
+
+  describe "frozen_ocean/0" do
+    test "has correct properties" do
+      terrain = TerrainType.frozen_ocean()
+
+      assert terrain.id == :frozen_ocean
+      assert terrain.name == "Frozen Ocean"
+      assert terrain.defense_modifier == -1
+      refute terrain.blocks_los
+      refute terrain.concealment
+      refute terrain.fortifiable
+      assert terrain.color == 0xADD8E6
+    end
+
+    test "has moderate movement cost for all units" do
+      terrain = TerrainType.frozen_ocean()
+
+      Enum.each([:infantry, :armor, :motorized, :artillery, :recon, :engineer], fn category ->
+        assert TerrainType.movement_cost(terrain, category) == 2
+      end)
+    end
+  end
+
+  describe "industrial/0" do
+    test "has correct properties" do
+      terrain = TerrainType.industrial()
+
+      assert terrain.id == :industrial
+      assert terrain.name == "Industrial"
+      assert terrain.defense_modifier == 2
+      assert terrain.blocks_los
+      assert terrain.concealment
+      assert terrain.fortifiable
+      assert terrain.color == 0x505050
+    end
+
+    test "has moderate movement cost for all units" do
+      terrain = TerrainType.industrial()
+
+      Enum.each([:infantry, :armor, :motorized, :artillery, :recon, :engineer], fn category ->
+        assert TerrainType.movement_cost(terrain, category) == 2
+      end)
     end
   end
 end

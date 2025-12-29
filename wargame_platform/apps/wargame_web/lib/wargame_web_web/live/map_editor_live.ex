@@ -15,6 +15,7 @@ defmodule WargameWebWeb.MapEditorLive do
   alias WargameCore.Hex.Coord
   alias WargameCore.Map, as: GameMap
   alias WargameCore.Map.Tile
+  alias WargameCore.Map.TransportSegment
   alias WargameCore.Terrain.TerrainType
 
   @default_width 20
@@ -24,8 +25,10 @@ defmodule WargameWebWeb.MapEditorLive do
   @impl true
   def mount(_params, _session, socket) do
     terrain_types = TerrainType.all() |> Enum.map(& &1.id)
-    edge_features = [:road, :railroad, :river, :stream, :bridge, :ford]
+    edge_features = [:none, :small_stream, :large_stream, :small_river, :large_river]
     overlay_types = [:minefield, :fortification, :trench, :wire, :bunker]
+    transport_segment_types = TransportSegment.all_types()
+    objective_forces = [:allied, :axis, :soviet, :german, :american, :british, :french, :japanese, :neutral]
 
     socket =
       socket
@@ -36,13 +39,21 @@ defmodule WargameWebWeb.MapEditorLive do
       |> assign(:tool, :brush)
       |> assign(:selected_terrain, :clear)
       |> assign(:selected_elevation, 0)
-      |> assign(:selected_edge_feature, :road)
-      |> assign(:selected_edge_direction, 0)
+      |> assign(:selected_edge_feature, :none)
+      |> assign(:selected_water_edges, MapSet.new())
       |> assign(:selected_overlay, :trench)
+      |> assign(:selected_segment_type, :small_paved_road)
+      |> assign(:selected_entry_edges, MapSet.new())
+      |> assign(:selected_exit_edges, MapSet.new())
+      |> assign(:objective_name, "")
+      |> assign(:objective_force, :neutral)
+      |> assign(:objective_points, 0)
+      |> assign(:objective_forces, objective_forces)
       |> assign(:brush_size, 1)
       |> assign(:terrain_types, terrain_types)
       |> assign(:edge_features, edge_features)
       |> assign(:overlay_types, overlay_types)
+      |> assign(:transport_segment_types, transport_segment_types)
       |> assign(:show_grid, true)
       |> assign(:show_coords, false)
       |> assign(:tile_overlay, :none)
@@ -110,9 +121,9 @@ defmodule WargameWebWeb.MapEditorLive do
           <!-- Tools -->
           <div class="mb-4">
             <h3 class="text-sm font-semibold text-gray-400 mb-1">Tools</h3>
-            <div class="grid grid-cols-4 gap-1">
+            <div class="grid grid-cols-3 gap-1">
               <button
-                :for={tool <- [:brush, :fill, :line, :elevation, :edge, :overlay, :eraser]}
+                :for={tool <- [:brush, :fill, :line, :elevation, :edge, :transport, :overlay, :objective, :eraser]}
                 phx-click="select_tool"
                 phx-value-tool={tool}
                 class={"px-2 py-2 rounded text-xs font-medium #{if @tool == tool, do: "bg-blue-600", else: "bg-gray-600 hover:bg-gray-500"}"}
@@ -185,8 +196,8 @@ defmodule WargameWebWeb.MapEditorLive do
 
           <!-- Edge Feature Selection -->
           <div :if={@tool == :edge} class="mb-4">
-            <h3 class="text-sm font-semibold text-gray-400 mb-1">Edge Feature</h3>
-            <div class="flex flex-wrap gap-1 mb-2">
+            <h3 class="text-sm font-semibold text-gray-400 mb-1">Water Type</h3>
+            <div class="flex flex-wrap gap-1 mb-3">
               <button
                 :for={feature <- @edge_features}
                 phx-click="select_edge_feature"
@@ -196,17 +207,29 @@ defmodule WargameWebWeb.MapEditorLive do
                 {feature_label(feature)}
               </button>
             </div>
-            <h4 class="text-xs font-semibold text-gray-400 mb-1">Direction</h4>
-            <div class="flex flex-wrap gap-1">
+
+            <h4 class="text-xs font-semibold text-gray-400 mb-1">Edges</h4>
+            <div class="flex flex-wrap gap-1 mb-3">
               <button
                 :for={dir <- 0..5}
-                phx-click="select_edge_direction"
-                phx-value-direction={dir}
-                class={"px-3 py-1 rounded text-sm #{if @selected_edge_direction == dir, do: "bg-blue-600", else: "bg-gray-600 hover:bg-gray-500"}"}
+                phx-click="toggle_water_edge"
+                phx-value-edge={dir}
+                class={"px-2 py-1 rounded text-xs #{if MapSet.member?(@selected_water_edges, dir), do: "bg-cyan-600", else: "bg-gray-600 hover:bg-gray-500"}"}
               >
                 {direction_label(dir)}
               </button>
             </div>
+
+            <p class="text-xs text-gray-500 mb-2">
+              Select edges then click hex. Use "None" to clear.
+            </p>
+
+            <button
+              phx-click="clear_water_edge_selection"
+              class="w-full px-2 py-1 rounded text-xs bg-gray-700 hover:bg-gray-600"
+            >
+              Clear Edge Selection
+            </button>
           </div>
 
           <!-- Overlay Selection -->
@@ -221,6 +244,114 @@ defmodule WargameWebWeb.MapEditorLive do
               >
                 {overlay_label(overlay)}
               </button>
+            </div>
+          </div>
+
+          <!-- Transport Segment Selection -->
+          <div :if={@tool == :transport} class="mb-4">
+            <h3 class="text-sm font-semibold text-gray-400 mb-1">Segment Type</h3>
+            <div class="flex flex-wrap gap-1 mb-3">
+              <button
+                :for={seg_type <- @transport_segment_types}
+                phx-click="select_segment_type"
+                phx-value-type={seg_type}
+                class={"px-2 py-1 rounded text-xs #{if @selected_segment_type == seg_type, do: "bg-blue-600", else: "bg-gray-600 hover:bg-gray-500"}"}
+              >
+                {segment_type_label(seg_type)}
+              </button>
+            </div>
+
+            <h4 class="text-xs font-semibold text-gray-400 mb-1">Entry Edges</h4>
+            <div class="flex flex-wrap gap-1 mb-2">
+              <button
+                :for={dir <- 0..5}
+                phx-click="toggle_entry_edge"
+                phx-value-edge={dir}
+                class={"px-2 py-1 rounded text-xs #{if MapSet.member?(@selected_entry_edges, dir), do: "bg-green-600", else: "bg-gray-600 hover:bg-gray-500"}"}
+              >
+                {direction_label(dir)}
+              </button>
+            </div>
+
+            <h4 class="text-xs font-semibold text-gray-400 mb-1">Exit Edges</h4>
+            <div class="flex flex-wrap gap-1 mb-3">
+              <button
+                :for={dir <- 0..5}
+                phx-click="toggle_exit_edge"
+                phx-value-edge={dir}
+                class={"px-2 py-1 rounded text-xs #{if MapSet.member?(@selected_exit_edges, dir), do: "bg-orange-600", else: "bg-gray-600 hover:bg-gray-500"}"}
+              >
+                {direction_label(dir)}
+              </button>
+            </div>
+
+            <p class="text-xs text-gray-500 mb-2">
+              Select edges then click a hex to add segment.
+              Click existing segment to remove it.
+            </p>
+
+            <div class="flex gap-1">
+              <button
+                phx-click="clear_edge_selection"
+                class="flex-1 px-2 py-1 rounded text-xs bg-gray-700 hover:bg-gray-600"
+              >
+                Clear Selection
+              </button>
+              <button
+                phx-click="clear_tile_transport"
+                class="flex-1 px-2 py-1 rounded text-xs bg-red-700 hover:bg-red-600"
+              >
+                Clear Transport
+              </button>
+            </div>
+          </div>
+
+          <!-- Objective Tool -->
+          <div :if={@tool == :objective} class="mb-4">
+            <h3 class="text-sm font-semibold text-gray-400 mb-1">Objective</h3>
+            <div class="space-y-2">
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={@objective_name}
+                  phx-blur="set_objective_name"
+                  phx-keydown="set_objective_name"
+                  phx-key="Enter"
+                  class="w-full bg-gray-700 text-white px-2 py-1 rounded text-sm"
+                  placeholder="e.g., Hill 223"
+                />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Force</label>
+                <div class="flex flex-wrap gap-1">
+                  <button
+                    :for={force <- @objective_forces}
+                    phx-click="set_objective_force"
+                    phx-value-force={force}
+                    class={"px-2 py-1 rounded text-xs #{if @objective_force == force, do: "bg-blue-600", else: "bg-gray-600 hover:bg-gray-500"}"}
+                  >
+                    {force_label(force)}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Victory Points</label>
+                <input
+                  type="number"
+                  value={@objective_points}
+                  phx-blur="set_objective_points"
+                  phx-keydown="set_objective_points"
+                  phx-key="Enter"
+                  class="w-20 bg-gray-700 text-white px-2 py-1 rounded text-sm"
+                  min="0"
+                  max="100"
+                />
+              </div>
+              <p class="text-xs text-gray-500">
+                Click a hex to set objective.
+                Click again to clear.
+              </p>
             </div>
           </div>
 
@@ -327,11 +458,51 @@ defmodule WargameWebWeb.MapEditorLive do
                 <%= if tile.overlays != [] do %>
                   <p><span class="text-gray-400">Overlays:</span> {Enum.map_join(tile.overlays, ", ", &overlay_label/1)}</p>
                 <% end %>
+                <%= if tile.transport_segments != [] do %>
+                  <div>
+                    <span class="text-gray-400">Transport:</span>
+                    <ul class="ml-2 mt-1 text-xs">
+                      <%= for segment <- tile.transport_segments do %>
+                        <li class="flex items-center justify-between py-0.5">
+                          <span>
+                            {segment_type_label(segment.type)}
+                            <span class="text-gray-500">
+                              ({format_segment_edges(segment)})
+                            </span>
+                          </span>
+                          <button
+                            phx-click="remove_transport_segment"
+                            phx-value-q={display_hex.q}
+                            phx-value-r={display_hex.r}
+                            phx-value-type={segment.type}
+                            phx-value-entry={Enum.join(segment.entry_edges, ",")}
+                            phx-value-exit={Enum.join(segment.exit_edges, ",")}
+                            class="text-red-400 hover:text-red-300 text-xs px-1"
+                          >
+                            ×
+                          </button>
+                        </li>
+                      <% end %>
+                    </ul>
+                  </div>
+                <% end %>
                 <%= if tile.control do %>
                   <p><span class="text-gray-400">Control:</span> {tile.control}</p>
                 <% end %>
                 <%= if tile.victory_points > 0 do %>
                   <p><span class="text-gray-400">Victory Points:</span> {tile.victory_points}</p>
+                <% end %>
+                <%= if tile.objective do %>
+                  <div>
+                    <span class="text-gray-400">Objective:</span>
+                    <span class="text-yellow-300 ml-1">★</span>
+                    <%= if tile.objective.name do %>
+                      <span>{tile.objective.name}</span>
+                    <% end %>
+                    <%= if tile.objective.force do %>
+                      <span class="text-xs text-gray-400">({force_label(tile.objective.force)})</span>
+                    <% end %>
+                  </div>
                 <% end %>
               <% end %>
             </div>
@@ -445,6 +616,44 @@ defmodule WargameWebWeb.MapEditorLive do
                   Tile elevations are relative to this base (e.g., base 100m + tile level 2 = 102m)
                 </p>
               </div>
+              <div>
+                <label class="block text-sm text-gray-400 mb-1">Version</label>
+                <input
+                  type="text"
+                  name="version"
+                  value={@map.version}
+                  class="w-full bg-gray-700 text-white px-3 py-2 rounded"
+                  placeholder="1.0"
+                />
+              </div>
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm text-gray-400 mb-1">Centerpoint Lat</label>
+                  <input
+                    type="number"
+                    name="centerpoint_lat"
+                    value={@map.centerpoint_lat}
+                    step="0.0001"
+                    min="-90"
+                    max="90"
+                    class="w-full bg-gray-700 text-white px-3 py-2 rounded"
+                    placeholder="e.g., 50.6292"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm text-gray-400 mb-1">Centerpoint Lng</label>
+                  <input
+                    type="number"
+                    name="centerpoint_lng"
+                    value={@map.centerpoint_lng}
+                    step="0.0001"
+                    min="-180"
+                    max="180"
+                    class="w-full bg-gray-700 text-white px-3 py-2 rounded"
+                    placeholder="e.g., 36.2405"
+                  />
+                </div>
+              </div>
               <div class="flex justify-end gap-2 mt-6">
                 <button
                   type="button"
@@ -502,6 +711,7 @@ defmodule WargameWebWeb.MapEditorLive do
   end
 
   # Fallback for events without shift key (backwards compatibility)
+  @impl true
   def handle_event("hex_selected", %{"q" => q, "r" => r}, socket) do
     handle_event("hex_selected", %{"q" => q, "r" => r, "shift" => false}, socket)
   end
@@ -559,13 +769,175 @@ defmodule WargameWebWeb.MapEditorLive do
   end
 
   @impl true
-  def handle_event("select_edge_direction", %{"direction" => dir}, socket) do
-    {:noreply, assign(socket, :selected_edge_direction, String.to_integer(dir))}
+  def handle_event("toggle_water_edge", %{"edge" => edge_str}, socket) do
+    edge = String.to_integer(edge_str)
+    water_edges = socket.assigns.selected_water_edges
+
+    updated_edges =
+      if MapSet.member?(water_edges, edge) do
+        MapSet.delete(water_edges, edge)
+      else
+        MapSet.put(water_edges, edge)
+      end
+
+    {:noreply, assign(socket, :selected_water_edges, updated_edges)}
+  end
+
+  @impl true
+  def handle_event("clear_water_edge_selection", _params, socket) do
+    {:noreply, assign(socket, :selected_water_edges, MapSet.new())}
+  end
+
+  @impl true
+  def handle_event("clear_tile_edges", _params, socket) do
+    display_hex = socket.assigns.selected_hex || socket.assigns.hovered_hex
+
+    if display_hex do
+      coord = Coord.new(display_hex.q, display_hex.r)
+      socket = push_history(socket)
+
+      case GameMap.update_tile(socket.assigns.map, coord, fn tile ->
+             %{tile | edges: %{}}
+           end) do
+        {:ok, map} ->
+          socket =
+            socket
+            |> assign(:map, map)
+            |> update_tiles([coord])
+
+          {:noreply, socket}
+
+        {:error, _} ->
+          {:noreply, socket}
+      end
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
   def handle_event("select_overlay", %{"overlay" => overlay}, socket) do
     {:noreply, assign(socket, :selected_overlay, String.to_existing_atom(overlay))}
+  end
+
+  @impl true
+  def handle_event("select_segment_type", %{"type" => type}, socket) do
+    {:noreply, assign(socket, :selected_segment_type, String.to_existing_atom(type))}
+  end
+
+  @impl true
+  def handle_event("toggle_entry_edge", %{"edge" => edge_str}, socket) do
+    edge = String.to_integer(edge_str)
+    entry_edges = socket.assigns.selected_entry_edges
+
+    updated_edges =
+      if MapSet.member?(entry_edges, edge) do
+        MapSet.delete(entry_edges, edge)
+      else
+        MapSet.put(entry_edges, edge)
+      end
+
+    {:noreply, assign(socket, :selected_entry_edges, updated_edges)}
+  end
+
+  @impl true
+  def handle_event("toggle_exit_edge", %{"edge" => edge_str}, socket) do
+    edge = String.to_integer(edge_str)
+    exit_edges = socket.assigns.selected_exit_edges
+
+    updated_edges =
+      if MapSet.member?(exit_edges, edge) do
+        MapSet.delete(exit_edges, edge)
+      else
+        MapSet.put(exit_edges, edge)
+      end
+
+    {:noreply, assign(socket, :selected_exit_edges, updated_edges)}
+  end
+
+  @impl true
+  def handle_event("clear_edge_selection", _params, socket) do
+    socket =
+      socket
+      |> assign(:selected_entry_edges, MapSet.new())
+      |> assign(:selected_exit_edges, MapSet.new())
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("clear_tile_transport", _params, socket) do
+    # Clear all transport segments from the selected or hovered hex
+    display_hex = socket.assigns.selected_hex || socket.assigns.hovered_hex
+
+    if display_hex do
+      coord = Coord.new(display_hex.q, display_hex.r)
+      socket = push_history(socket)
+
+      case GameMap.update_tile(socket.assigns.map, coord, fn tile ->
+             Tile.clear_transport_segments(tile)
+           end) do
+        {:ok, map} ->
+          socket =
+            socket
+            |> assign(:map, map)
+            |> update_tiles([coord])
+
+          {:noreply, socket}
+
+        {:error, _} ->
+          {:noreply, socket}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("remove_transport_segment", params, socket) do
+    %{"q" => q_str, "r" => r_str, "type" => type_str, "entry" => entry_str, "exit" => exit_str} = params
+
+    coord = Coord.new(String.to_integer(q_str), String.to_integer(r_str))
+    type = String.to_existing_atom(type_str)
+    entry_edges = parse_edge_list(entry_str)
+    exit_edges = parse_edge_list(exit_str)
+
+    segment = TransportSegment.new(type, entry_edges, exit_edges)
+
+    socket = push_history(socket)
+
+    case GameMap.update_tile(socket.assigns.map, coord, fn tile ->
+           Tile.remove_transport_segment(tile, segment)
+         end) do
+      {:ok, map} ->
+        socket =
+          socket
+          |> assign(:map, map)
+          |> update_tiles([coord])
+
+        {:noreply, socket}
+
+      {:error, _} ->
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("set_objective_name", %{"value" => value}, socket) do
+    {:noreply, assign(socket, :objective_name, value)}
+  end
+
+  @impl true
+  def handle_event("set_objective_force", %{"force" => force}, socket) do
+    {:noreply, assign(socket, :objective_force, String.to_existing_atom(force))}
+  end
+
+  @impl true
+  def handle_event("set_objective_points", %{"value" => value}, socket) do
+    case Integer.parse(value) do
+      {points, _} -> {:noreply, assign(socket, :objective_points, max(0, points))}
+      :error -> {:noreply, socket}
+    end
   end
 
   @impl true
@@ -686,9 +1058,18 @@ defmodule WargameWebWeb.MapEditorLive do
     height = String.to_integer(params["height"])
     scale = String.to_integer(params["scale"])
     base_elevation = String.to_integer(params["base_elevation"] || "0")
+    version = params["version"] || "1.0"
+    centerpoint_lat = parse_float(params["centerpoint_lat"])
+    centerpoint_lng = parse_float(params["centerpoint_lng"])
 
     socket = push_history(socket)
-    map = resize_map(socket.assigns.map, width, height, scale, base_elevation)
+
+    map =
+      resize_map(socket.assigns.map, width, height, scale, base_elevation,
+        version: version,
+        centerpoint_lat: centerpoint_lat,
+        centerpoint_lng: centerpoint_lng
+      )
 
     socket =
       socket
@@ -741,6 +1122,21 @@ defmodule WargameWebWeb.MapEditorLive do
     {:noreply, assign(socket, :save_status, nil)}
   end
 
+  # Helper Functions
+
+  defp parse_float(nil), do: nil
+  defp parse_float(""), do: nil
+
+  defp parse_float(value) when is_binary(value) do
+    case Float.parse(value) do
+      {float, _} -> float
+      :error -> nil
+    end
+  end
+
+  defp parse_float(value) when is_float(value), do: value
+  defp parse_float(value) when is_integer(value), do: value * 1.0
+
   # Tool Application
 
   defp apply_tool(socket, coord) do
@@ -750,7 +1146,9 @@ defmodule WargameWebWeb.MapEditorLive do
       :line -> apply_line(socket, coord)
       :elevation -> apply_elevation_tool(socket, coord)
       :edge -> apply_edge_tool(socket, coord)
+      :transport -> apply_transport_tool(socket, coord)
       :overlay -> apply_overlay_tool(socket, coord)
+      :objective -> apply_objective_tool(socket, coord)
       :eraser -> apply_eraser(socket, coord)
     end
   end
@@ -914,21 +1312,35 @@ defmodule WargameWebWeb.MapEditorLive do
   end
 
   defp apply_edge_tool(socket, %{q: q, r: r}) do
-    socket = push_history(socket)
-    coord = Coord.new(q, r)
-    feature = socket.assigns.selected_edge_feature
-    direction = socket.assigns.selected_edge_direction
+    water_edges = socket.assigns.selected_water_edges
 
-    case GameMap.update_tile(socket.assigns.map, coord, fn tile ->
-           Tile.add_edge_feature(tile, direction, feature)
-         end) do
-      {:ok, map} ->
-        socket
-        |> assign(:map, map)
-        |> update_tiles([coord])
+    # Only apply if at least one edge is selected
+    if MapSet.size(water_edges) == 0 do
+      socket
+    else
+      socket = push_history(socket)
+      coord = Coord.new(q, r)
+      feature = socket.assigns.selected_edge_feature
 
-      {:error, _} ->
-        socket
+      case GameMap.update_tile(socket.assigns.map, coord, fn tile ->
+             Enum.reduce(MapSet.to_list(water_edges), tile, fn edge, acc_tile ->
+               if feature == :none do
+                 # Clear features from selected edges
+                 Tile.clear_edge(acc_tile, edge)
+               else
+                 # Add the feature to selected edges
+                 Tile.add_edge_feature(acc_tile, edge, feature)
+               end
+             end)
+           end) do
+        {:ok, map} ->
+          socket
+          |> assign(:map, map)
+          |> update_tiles([coord])
+
+        {:error, _} ->
+          socket
+      end
     end
   end
 
@@ -942,6 +1354,71 @@ defmodule WargameWebWeb.MapEditorLive do
              Tile.remove_overlay(tile, overlay)
            else
              Tile.add_overlay(tile, overlay)
+           end
+         end) do
+      {:ok, map} ->
+        socket
+        |> assign(:map, map)
+        |> update_tiles([coord])
+
+      {:error, _} ->
+        socket
+    end
+  end
+
+  defp apply_transport_tool(socket, %{q: q, r: r}) do
+    entry_edges = socket.assigns.selected_entry_edges
+    exit_edges = socket.assigns.selected_exit_edges
+
+    # Only apply if at least one edge is selected
+    if MapSet.size(entry_edges) == 0 and MapSet.size(exit_edges) == 0 do
+      socket
+    else
+      socket = push_history(socket)
+      coord = Coord.new(q, r)
+      segment_type = socket.assigns.selected_segment_type
+
+      segment =
+        TransportSegment.new(
+          segment_type,
+          MapSet.to_list(entry_edges),
+          MapSet.to_list(exit_edges)
+        )
+
+      case GameMap.update_tile(socket.assigns.map, coord, fn tile ->
+             Tile.add_transport_segment(tile, segment)
+           end) do
+        {:ok, map} ->
+          socket
+          |> assign(:map, map)
+          |> update_tiles([coord])
+
+        {:error, _} ->
+          socket
+      end
+    end
+  end
+
+  defp apply_objective_tool(socket, %{q: q, r: r}) do
+    socket = push_history(socket)
+    coord = Coord.new(q, r)
+
+    name = socket.assigns.objective_name
+    force = socket.assigns.objective_force
+    points = socket.assigns.objective_points
+
+    # Toggle: if tile already has an objective, clear it; otherwise set it
+    case GameMap.update_tile(socket.assigns.map, coord, fn tile ->
+           if tile.objective do
+             # Clear objective
+             tile
+             |> Tile.clear_objective()
+             |> Tile.set_victory_points(0)
+           else
+             # Set objective
+             tile
+             |> Tile.set_objective(if(name == "", do: nil, else: name), force)
+             |> Tile.set_victory_points(points)
            end
          end) do
       {:ok, map} ->
@@ -1042,9 +1519,18 @@ defmodule WargameWebWeb.MapEditorLive do
     GameMap.new("New Map", width, height, scale)
   end
 
-  defp resize_map(old_map, new_width, new_height, new_scale, new_base_elevation) do
-    new_map = GameMap.new(old_map.name, new_width, new_height, new_scale,
-      base_elevation: new_base_elevation)
+  defp resize_map(old_map, new_width, new_height, new_scale, new_base_elevation, opts) do
+    version = Keyword.get(opts, :version, old_map.version)
+    centerpoint_lat = Keyword.get(opts, :centerpoint_lat, old_map.centerpoint_lat)
+    centerpoint_lng = Keyword.get(opts, :centerpoint_lng, old_map.centerpoint_lng)
+
+    new_map =
+      GameMap.new(old_map.name, new_width, new_height, new_scale,
+        base_elevation: new_base_elevation,
+        version: version,
+        centerpoint_lat: centerpoint_lat,
+        centerpoint_lng: centerpoint_lng
+      )
 
     # Copy over existing tiles that fit in the new dimensions
     Enum.reduce(GameMap.all_tiles(old_map), new_map, fn tile, acc_map ->
@@ -1078,9 +1564,11 @@ defmodule WargameWebWeb.MapEditorLive do
       elevation: tile.elevation,
       edges: edges_to_json(tile.edges),
       overlays: Enum.map(tile.overlays, &Atom.to_string/1),
+      transportSegments: transport_segments_to_json(tile.transport_segments),
       control: if(tile.control, do: Atom.to_string(tile.control), else: nil),
       victoryPoints: tile.victory_points,
-      name: tile.name
+      name: tile.name,
+      objective: objective_to_json(tile.objective)
     }
   end
 
@@ -1092,6 +1580,25 @@ defmodule WargameWebWeb.MapEditorLive do
     |> Enum.into(%{})
   end
 
+  defp transport_segments_to_json(segments) do
+    Enum.map(segments, fn segment ->
+      %{
+        type: Atom.to_string(segment.type),
+        entry_edges: segment.entry_edges,
+        exit_edges: segment.exit_edges
+      }
+    end)
+  end
+
+  defp objective_to_json(nil), do: nil
+
+  defp objective_to_json(%{name: name, force: force}) do
+    %{
+      name: name,
+      force: if(force, do: Atom.to_string(force), else: nil)
+    }
+  end
+
   # YAML serialization
   defp map_to_yaml(map, name) do
     tiles_yaml =
@@ -1100,26 +1607,40 @@ defmodule WargameWebWeb.MapEditorLive do
       |> Enum.reject(fn tile ->
         # Skip default tiles (clear terrain, no elevation, no features)
         tile.terrain == :clear and tile.elevation == 0 and
-          tile.edges == %{} and tile.overlays == []
+          tile.edges == %{} and tile.overlays == [] and
+          tile.transport_segments == [] and tile.objective == nil
       end)
       |> Enum.map(&tile_to_yaml/1)
       |> Enum.join("\n")
 
-    base_elevation_line = if map.base_elevation != 0 do
-      "base_elevation: #{map.base_elevation}\n"
-    else
-      ""
-    end
+    base_elevation_line =
+      if map.base_elevation != 0 do
+        "base_elevation: #{map.base_elevation}\n"
+      else
+        ""
+      end
+
+    centerpoint_lines =
+      if map.centerpoint_lat && map.centerpoint_lng do
+        """
+        centerpoint:
+          lat: #{map.centerpoint_lat}
+          lng: #{map.centerpoint_lng}
+        """
+      else
+        ""
+      end
 
     """
     # Wargame Map File
     # Generated by Wargame Platform Map Editor
 
     name: "#{escape_yaml_string(name)}"
+    version: "#{map.version}"
     width: #{map.width}
     height: #{map.height}
     scale: #{map.scale}
-    #{base_elevation_line}
+    #{base_elevation_line}#{centerpoint_lines}
     tiles:
     #{tiles_yaml}
     """
@@ -1163,10 +1684,36 @@ defmodule WargameWebWeb.MapEditorLive do
 
     vp =
       if tile.victory_points > 0,
-        do: "\n    victoryPoints: #{tile.victory_points}",
+        do: "\n    victory_points: #{tile.victory_points}",
         else: ""
 
-    base <> elevation <> edges <> overlays <> control <> vp
+    transport_segments =
+      if tile.transport_segments != [] do
+        segments_str =
+          tile.transport_segments
+          |> Enum.map(fn segment ->
+            entry_str = "[#{Enum.join(segment.entry_edges, ", ")}]"
+            exit_str = "[#{Enum.join(segment.exit_edges, ", ")}]"
+            "      - type: #{segment.type}\n        entry: #{entry_str}\n        exit: #{exit_str}"
+          end)
+          |> Enum.join("\n")
+
+        "\n    transport_segments:\n#{segments_str}"
+      else
+        ""
+      end
+
+    objective =
+      if tile.objective do
+        obj = tile.objective
+        name_line = if obj.name, do: "\n      name: \"#{escape_yaml_string(obj.name)}\"", else: ""
+        force_line = if obj.force, do: "\n      force: #{obj.force}", else: ""
+        "\n    objective:#{name_line}#{force_line}"
+      else
+        ""
+      end
+
+    base <> elevation <> edges <> overlays <> control <> vp <> transport_segments <> objective
   end
 
   defp escape_yaml_string(str) do
@@ -1186,14 +1733,40 @@ defmodule WargameWebWeb.MapEditorLive do
       height = Map.get(metadata, "height", @default_height)
       scale = Map.get(metadata, "scale", @default_scale)
       base_elevation = Map.get(metadata, "base_elevation", 0)
+      version = Map.get(metadata, "version", "1.0")
       name = Map.get(metadata, "name", "Loaded Map")
 
-      map = GameMap.new(name, width, height, scale, base_elevation: base_elevation)
+      # Parse centerpoint from nested structure
+      centerpoint_lat = parse_centerpoint_lat(content)
+      centerpoint_lng = parse_centerpoint_lng(content)
+
+      map =
+        GameMap.new(name, width, height, scale,
+          base_elevation: base_elevation,
+          version: version,
+          centerpoint_lat: centerpoint_lat,
+          centerpoint_lng: centerpoint_lng
+        )
+
       map = apply_yaml_tiles(map, tile_lines)
 
       {:ok, map, name}
     rescue
       e -> {:error, Exception.message(e)}
+    end
+  end
+
+  defp parse_centerpoint_lat(content) do
+    case Regex.run(~r/centerpoint:\s*\n\s*lat:\s*([\d.-]+)/m, content) do
+      [_, lat] -> parse_float(lat)
+      _ -> nil
+    end
+  end
+
+  defp parse_centerpoint_lng(content) do
+    case Regex.run(~r/centerpoint:\s*\n\s*lat:\s*[\d.-]+\s*\n\s*lng:\s*([\d.-]+)/m, content) do
+      [_, lng] -> parse_float(lng)
+      _ -> nil
     end
   end
 
@@ -1252,6 +1825,8 @@ defmodule WargameWebWeb.MapEditorLive do
              |> Map.put(:overlays, tile_data.overlays)
              |> Map.put(:control, tile_data.control)
              |> Map.put(:victory_points, tile_data.victory_points)
+             |> Map.put(:transport_segments, tile_data.transport_segments)
+             |> Map.put(:objective, tile_data.objective)
            end) do
         {:ok, updated} -> updated
         {:error, _} -> acc_map
@@ -1284,11 +1859,19 @@ defmodule WargameWebWeb.MapEditorLive do
     coord_match = Regex.run(~r/coord:\s*\[(\d+),\s*(\d+)\]/, joined)
     terrain_match = Regex.run(~r/terrain:\s*(\w+)/, joined)
     elevation_match = Regex.run(~r/elevation:\s*(\d+)/, joined)
+    victory_points_match = Regex.run(~r/victory_points:\s*(\d+)/, joined)
 
     if coord_match && terrain_match do
       [_, q, r] = coord_match
       [_, terrain] = terrain_match
       elevation = if elevation_match, do: String.to_integer(Enum.at(elevation_match, 1)), else: 0
+      victory_points = if victory_points_match, do: String.to_integer(Enum.at(victory_points_match, 1)), else: 0
+
+      # Parse transport segments
+      transport_segments = parse_transport_segments(joined)
+
+      # Parse objective
+      objective = parse_objective(joined)
 
       %{
         q: String.to_integer(q),
@@ -1298,8 +1881,61 @@ defmodule WargameWebWeb.MapEditorLive do
         edges: %{},
         overlays: [],
         control: nil,
-        victory_points: 0
+        victory_points: victory_points,
+        transport_segments: transport_segments,
+        objective: objective
       }
+    else
+      nil
+    end
+  end
+
+  defp parse_transport_segments(yaml_string) do
+    # Match the transport_segments section and extract individual segments
+    case Regex.run(~r/transport_segments:\s*\n((?:\s+-\s+type:.*\n(?:\s+\w+:.*\n)*)+)/s, yaml_string) do
+      [_, segments_block] ->
+        # Parse each segment
+        segment_pattern = ~r/-\s+type:\s*(\w+)\s*\n\s+entry:\s*\[([^\]]*)\]\s*\n\s+exit:\s*\[([^\]]*)\]/
+
+        Regex.scan(segment_pattern, segments_block)
+        |> Enum.map(fn [_, type, entry, exit] ->
+          entry_edges = parse_edge_list_yaml(entry)
+          exit_edges = parse_edge_list_yaml(exit)
+
+          TransportSegment.new(
+            String.to_existing_atom(type),
+            entry_edges,
+            exit_edges
+          )
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp parse_edge_list_yaml(str) do
+    str
+    |> String.split(",")
+    |> Enum.map(&String.trim/1)
+    |> Enum.filter(&(&1 != ""))
+    |> Enum.map(&String.to_integer/1)
+  end
+
+  defp parse_objective(yaml_string) do
+    # Check if objective section exists
+    if String.contains?(yaml_string, "objective:") do
+      name_match = Regex.run(~r/objective:.*?name:\s*"([^"]*)"/, yaml_string)
+      force_match = Regex.run(~r/objective:.*?force:\s*(\w+)/, yaml_string)
+
+      name = if name_match, do: Enum.at(name_match, 1), else: nil
+      force = if force_match, do: String.to_existing_atom(Enum.at(force_match, 1)), else: nil
+
+      if name || force do
+        %{name: name, force: force}
+      else
+        nil
+      end
     else
       nil
     end
@@ -1320,7 +1956,9 @@ defmodule WargameWebWeb.MapEditorLive do
   defp tool_label(:line), do: "Line"
   defp tool_label(:elevation), do: "Elev"
   defp tool_label(:edge), do: "Edge"
+  defp tool_label(:transport), do: "Transp"
   defp tool_label(:overlay), do: "Overlay"
+  defp tool_label(:objective), do: "Obj"
   defp tool_label(:eraser), do: "Eraser"
 
   defp terrain_label(terrain) when is_atom(terrain) do
@@ -1329,23 +1967,19 @@ defmodule WargameWebWeb.MapEditorLive do
       :clear -> "Clear"
       :forest_pine -> "Pine"
       :forest_deciduous -> "Decid"
-      :hill -> "Hill"
-      :mountain -> "Mtn"
-      :desert -> "Desert"
-      :farmland -> "Farm"
-      :pasture -> "Pasture"
-      :swamp -> "Swamp"
       :marsh -> "Marsh"
-      :lake -> "Lake"
-      :river -> "River"
+      :orchard -> "Orchard"
+      :light_urban -> "Town"
+      :heavy_urban -> "City"
+      :industrial -> "Indust"
+      :desert -> "Desert"
+      :semi_arid -> "S-Arid"
+      :tundra -> "Tundra"
+      :arctic -> "Arctic"
+      :freshwater_lake -> "Lake"
+      :frozen_lake -> "FrzLake"
       :ocean -> "Ocean"
-      :urban -> "Urban"
-      :village -> "Village"
-      :ruins -> "Ruins"
-      :road -> "Road"
-      :railroad -> "Rail"
-      :fortification -> "Fort"
-      :minefield -> "Mine"
+      :frozen_ocean -> "FrzOcn"
       _ ->
         terrain
         |> Atom.to_string()
@@ -1363,26 +1997,28 @@ defmodule WargameWebWeb.MapEditorLive do
       :clear -> "bg-green-200 text-green-900"
       :forest_pine -> "bg-green-700 text-white"
       :forest_deciduous -> "bg-green-500 text-white"
-      :hill -> "bg-amber-700 text-white"
-      :mountain -> "bg-gray-500 text-white"
-      :desert -> "bg-yellow-300 text-yellow-900"
-      :farmland -> "bg-yellow-600 text-white"
-      :pasture -> "bg-green-300 text-green-900"
-      :swamp -> "bg-green-900 text-white"
       :marsh -> "bg-green-800 text-white"
-      :lake -> "bg-blue-600 text-white"
-      :river -> "bg-blue-500 text-white"
+      :orchard -> "bg-lime-500 text-white"
+      :light_urban -> "bg-gray-400 text-gray-900"
+      :heavy_urban -> "bg-gray-600 text-white"
+      :industrial -> "bg-neutral-700 text-white"
+      :desert -> "bg-yellow-300 text-yellow-900"
+      :semi_arid -> "bg-amber-300 text-amber-900"
+      :tundra -> "bg-stone-500 text-white"
+      :arctic -> "bg-slate-100 text-slate-800"
+      :freshwater_lake -> "bg-blue-600 text-white"
+      :frozen_lake -> "bg-sky-200 text-sky-900"
       :ocean -> "bg-blue-900 text-white"
-      :urban -> "bg-gray-600 text-white"
-      :village -> "bg-gray-400 text-gray-900"
-      :ruins -> "bg-orange-800 text-white"
-      :road -> "bg-amber-200 text-amber-900"
-      :railroad -> "bg-gray-700 text-white"
-      :fortification -> "bg-orange-900 text-white"
-      :minefield -> "bg-red-500 text-white"
+      :frozen_ocean -> "bg-sky-300 text-sky-900"
       _ -> "bg-gray-600 text-white"
     end
   end
+
+  defp feature_label(:none), do: "None"
+  defp feature_label(:small_stream), do: "Sm Stream"
+  defp feature_label(:large_stream), do: "Lg Stream"
+  defp feature_label(:small_river), do: "Sm River"
+  defp feature_label(:large_river), do: "Lg River"
 
   defp feature_label(feature) when is_atom(feature) do
     feature
@@ -1392,12 +2028,12 @@ defmodule WargameWebWeb.MapEditorLive do
 
   defp feature_label(feature), do: feature
 
-  defp direction_label(0), do: "E"
-  defp direction_label(1), do: "SE"
-  defp direction_label(2), do: "SW"
-  defp direction_label(3), do: "W"
-  defp direction_label(4), do: "NW"
-  defp direction_label(5), do: "NE"
+  defp direction_label(0), do: "N"
+  defp direction_label(1), do: "NE"
+  defp direction_label(2), do: "SE"
+  defp direction_label(3), do: "S"
+  defp direction_label(4), do: "SW"
+  defp direction_label(5), do: "NW"
   defp direction_label(dir), do: "#{dir}"
 
   defp overlay_label(overlay) when is_atom(overlay) do
@@ -1418,4 +2054,64 @@ defmodule WargameWebWeb.MapEditorLive do
       "#{abs_elev}m (#{sign}#{tile_elevation})"
     end
   end
+
+  defp segment_type_label(type) when is_atom(type) do
+    case type do
+      :trail -> "Trail"
+      :small_unpaved_road -> "Sm Unpaved"
+      :large_unpaved_road -> "Lg Unpaved"
+      :small_paved_road -> "Sm Paved"
+      :large_paved_road -> "Lg Paved"
+      :railroad -> "Rail 1"
+      :double_track_railroad -> "Rail 2"
+      :triple_track_railroad -> "Rail 3"
+      :runway -> "Runway"
+      _ -> Atom.to_string(type)
+    end
+  end
+
+  defp segment_type_label(type), do: type
+
+  defp format_segment_edges(segment) do
+    entry =
+      case segment.entry_edges do
+        [] -> ""
+        edges -> "in: " <> Enum.map_join(edges, ",", &direction_label/1)
+      end
+
+    exit =
+      case segment.exit_edges do
+        [] -> ""
+        edges -> "out: " <> Enum.map_join(edges, ",", &direction_label/1)
+      end
+
+    [entry, exit]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join(" ")
+  end
+
+  defp parse_edge_list(""), do: []
+
+  defp parse_edge_list(str) do
+    str
+    |> String.split(",")
+    |> Enum.map(&String.to_integer/1)
+  end
+
+  defp force_label(force) when is_atom(force) do
+    case force do
+      :allied -> "Allied"
+      :axis -> "Axis"
+      :soviet -> "Soviet"
+      :german -> "German"
+      :american -> "US"
+      :british -> "UK"
+      :french -> "French"
+      :japanese -> "Japan"
+      :neutral -> "Neutral"
+      _ -> force |> Atom.to_string() |> String.capitalize()
+    end
+  end
+
+  defp force_label(force), do: force
 end
