@@ -79,7 +79,7 @@ defmodule WargameWebWeb.MapEditorLiveTest do
       view |> element("button[phx-value-tool='edge']") |> render_click()
       html = render(view)
       assert html =~ "Water Type"
-      assert html =~ "Edges"
+      assert html =~ "Click edges:"
     end
 
     test "can select overlay tool", %{conn: conn} do
@@ -265,15 +265,16 @@ defmodule WargameWebWeb.MapEditorLiveTest do
   end
 
   describe "edge features" do
-    test "shows edge selection buttons when edge tool selected", %{conn: conn} do
+    test "shows SVG mini-hex with clickable edges when edge tool selected", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/map-editor")
 
       # Select edge tool
       view |> element("button[phx-value-tool='edge']") |> render_click()
       html = render(view)
 
-      # Check edge toggle buttons are shown (using toggle_water_edge)
-      assert html =~ "Edges"
+      # Check SVG mini-hex with edge toggle lines are shown
+      assert html =~ "<svg"
+      assert html =~ "Click edges:"
       for dir <- 0..5 do
         assert html =~ ~r/phx-click="toggle_water_edge".*phx-value-edge="#{dir}"/s or
                html =~ ~r/phx-value-edge="#{dir}".*phx-click="toggle_water_edge"/s
@@ -290,42 +291,234 @@ defmodule WargameWebWeb.MapEditorLiveTest do
       assert html =~ ~r/phx-value-feature="small_river".*bg-blue-600/s
     end
 
-    test "shows all water feature types including None", %{conn: conn} do
+    test "shows water feature types in palette (toggle clears)", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/map-editor")
 
       view |> element("button[phx-value-tool='edge']") |> render_click()
       html = render(view)
 
-      # Check all water feature types are available (including None for clearing)
-      assert html =~ "None"
+      # Check water feature types are available (no None button, toggle handles clearing)
       assert html =~ "Sm Stream"
       assert html =~ "Lg Stream"
       assert html =~ "Sm River"
       assert html =~ "Lg River"
     end
 
-    test "None is selected by default for edge features", %{conn: conn} do
+    test "no water type button is highlighted by default", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/map-editor")
 
       view |> element("button[phx-value-tool='edge']") |> render_click()
       html = render(view)
 
-      # None should be highlighted as the default selection
-      assert html =~ ~r/phx-value-feature="none".*bg-blue-600/s
+      # All water type buttons should have the unselected styling (bg-gray-600)
+      # None of them should have bg-blue-600 in their immediate styling
+      # Check that the water type buttons are in their unselected state
+      assert html =~ ~r/phx-value-feature="small_stream" class="[^"]*bg-gray-600/
+      assert html =~ ~r/phx-value-feature="large_stream" class="[^"]*bg-gray-600/
+      assert html =~ ~r/phx-value-feature="small_river" class="[^"]*bg-gray-600/
+      assert html =~ ~r/phx-value-feature="large_river" class="[^"]*bg-gray-600/
     end
 
-    test "can toggle water edges", %{conn: conn} do
+    test "can toggle water edges via SVG line click", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/map-editor")
 
       view |> element("button[phx-value-tool='edge']") |> render_click()
 
-      # Toggle edge 0
-      view |> element("button[phx-click='toggle_water_edge'][phx-value-edge='0']") |> render_click()
+      # First select a water type
+      view |> element("button[phx-value-feature='small_river']") |> render_click()
+
+      # Toggle edge 0 via SVG line
+      view |> element("line[phx-click='toggle_water_edge'][phx-value-edge='0']") |> render_click()
 
       html = render(view)
-      # The button should be highlighted (bg-cyan-600)
-      assert html =~ ~r/phx-value-edge="0".*bg-cyan-600/s or
-             html =~ ~r/bg-cyan-600.*phx-value-edge="0"/s
+      # The selected edge should show a visible line with the selected feature's color
+      assert html =~ ~r/stroke="#4682B4"/  # small_river color
+    end
+
+    test "applying edges to a tile stores the edge data", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/map-editor")
+
+      # Select edge tool
+      view |> element("button[phx-value-tool='edge']") |> render_click()
+
+      # Select small_river feature
+      view |> element("button[phx-value-feature='small_river']") |> render_click()
+
+      # Toggle edge 0 (N)
+      view |> element("line[phx-click='toggle_water_edge'][phx-value-edge='0']") |> render_click()
+
+      # Click on hex (5, 5) to apply the edge
+      render_hook(view, "hex_selected", %{"q" => 5, "r" => 5})
+
+      # Hover over the hex to see its info in the right panel
+      render_hook(view, "hex_hovered", %{"q" => 5, "r" => 5})
+
+      html = render(view)
+      # The hex info panel should show the edge
+      assert html =~ "Edges:"
+      assert html =~ "N:"
+      assert html =~ "small_river" or html =~ "Sm River"
+    end
+
+    test "toggling edge off removes it from selection", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/map-editor")
+
+      view |> element("button[phx-value-tool='edge']") |> render_click()
+      view |> element("button[phx-value-feature='large_stream']") |> render_click()
+
+      # Toggle edge 2 on
+      view |> element("line[phx-click='toggle_water_edge'][phx-value-edge='2']") |> render_click()
+      html = render(view)
+      assert html =~ ~r/stroke="#87CEEB"/  # large_stream color (light blue)
+
+      # Toggle edge 2 off
+      view |> element("line[phx-click='toggle_water_edge'][phx-value-edge='2']") |> render_click()
+      html = render(view)
+      # The edge should no longer have the colored stroke visible
+      # (the visible line is only rendered when edge is in selected_water_edges)
+      refute html =~ ~r/stroke="#87CEEB".*stroke-width="6"/s
+    end
+
+    test "can apply multiple edges to a single tile", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/map-editor")
+
+      view |> element("button[phx-value-tool='edge']") |> render_click()
+      view |> element("button[phx-value-feature='small_stream']") |> render_click()
+
+      # Toggle edges 0 and 3 (N and S)
+      view |> element("line[phx-click='toggle_water_edge'][phx-value-edge='0']") |> render_click()
+      view |> element("line[phx-click='toggle_water_edge'][phx-value-edge='3']") |> render_click()
+
+      # Apply to hex
+      render_hook(view, "hex_selected", %{"q" => 3, "r" => 3})
+
+      # Check the tile
+      render_hook(view, "hex_hovered", %{"q" => 3, "r" => 3})
+      html = render(view)
+
+      assert html =~ "Edges:"
+      assert html =~ "N:"
+      assert html =~ "S:"
+    end
+
+    test "clearing water edge selection resets all edges", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/map-editor")
+
+      view |> element("button[phx-value-tool='edge']") |> render_click()
+      view |> element("button[phx-value-feature='large_river']") |> render_click()
+
+      # Toggle multiple edges
+      view |> element("line[phx-click='toggle_water_edge'][phx-value-edge='1']") |> render_click()
+      view |> element("line[phx-click='toggle_water_edge'][phx-value-edge='4']") |> render_click()
+
+      html = render(view)
+      # Both edges should show the river color
+      assert html =~ ~r/stroke="#4682B4"/
+
+      # Clear the selection by clicking clear_water_edge_selection
+      # Note: The new UI doesn't have a clear button, but we can test the event directly
+      render_click(view, "clear_water_edge_selection", %{})
+
+      html = render(view)
+      # No edges should be highlighted with river color anymore
+      refute html =~ ~r/stroke="#4682B4".*stroke-width="10"/s
+    end
+
+    test "applying edge with :none feature clears existing edges", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/map-editor")
+
+      # First, apply a river to edge 0
+      view |> element("button[phx-value-tool='edge']") |> render_click()
+      view |> element("button[phx-value-feature='small_river']") |> render_click()
+      view |> element("line[phx-click='toggle_water_edge'][phx-value-edge='0']") |> render_click()
+      render_hook(view, "hex_selected", %{"q" => 4, "r" => 4})
+
+      # Verify the edge was applied
+      render_hook(view, "hex_hovered", %{"q" => 4, "r" => 4})
+      html = render(view)
+      assert html =~ "N:"
+
+      # Now clear the edge selection and use :none to clear
+      render_click(view, "clear_water_edge_selection", %{})
+      render_click(view, "select_edge_feature", %{"feature" => "none"})
+      view |> element("line[phx-click='toggle_water_edge'][phx-value-edge='0']") |> render_click()
+      render_hook(view, "hex_selected", %{"q" => 4, "r" => 4})
+
+      # Check that the edge is cleared - N: should no longer appear
+      render_hook(view, "hex_hovered", %{"q" => 4, "r" => 4})
+      html = render(view)
+      # After clearing, the Edges: section should not show "N:" anymore
+      refute html =~ ~r/Edges:.*N:/s
+    end
+
+    test "edge data persists through undo/redo", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/map-editor")
+
+      # Apply an edge
+      view |> element("button[phx-value-tool='edge']") |> render_click()
+      view |> element("button[phx-value-feature='large_river']") |> render_click()
+      view |> element("line[phx-click='toggle_water_edge'][phx-value-edge='2']") |> render_click()
+      render_hook(view, "hex_selected", %{"q" => 6, "r" => 6})
+
+      # Verify edge exists
+      render_hook(view, "hex_hovered", %{"q" => 6, "r" => 6})
+      html = render(view)
+      assert html =~ "SE:"
+
+      # Undo
+      view |> element("button[phx-click='undo']") |> render_click()
+      render_hook(view, "hex_hovered", %{"q" => 6, "r" => 6})
+      html = render(view)
+      refute html =~ "SE:"
+
+      # Redo
+      view |> element("button[phx-click='redo']") |> render_click()
+      render_hook(view, "hex_hovered", %{"q" => 6, "r" => 6})
+      html = render(view)
+      assert html =~ "SE:"
+    end
+  end
+
+  describe "edge tool YAML serialization" do
+    test "edges are included in saved YAML", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/map-editor")
+
+      # Apply an edge to a tile
+      view |> element("button[phx-value-tool='edge']") |> render_click()
+      view |> element("button[phx-value-feature='small_stream']") |> render_click()
+      view |> element("line[phx-click='toggle_water_edge'][phx-value-edge='1']") |> render_click()
+      render_hook(view, "hex_selected", %{"q" => 2, "r" => 2})
+
+      # Trigger save - this pushes the download_file event
+      # We can't easily capture the YAML content in tests, but we can verify the event is sent
+      view |> element("button[phx-click='save_map']") |> render_click()
+
+      # The save status should show
+      html = render(view)
+      assert html =~ "Saved!"
+    end
+
+    test "edges applied via UI are preserved after other tile operations", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/map-editor")
+
+      # Apply an edge to a tile
+      view |> element("button[phx-value-tool='edge']") |> render_click()
+      view |> element("button[phx-value-feature='large_river']") |> render_click()
+      view |> element("line[phx-click='toggle_water_edge'][phx-value-edge='2']") |> render_click()
+      render_hook(view, "hex_selected", %{"q" => 7, "r" => 7})
+
+      # Now change the terrain on that tile
+      view |> element("button[phx-value-tool='brush']") |> render_click()
+      view |> element("button[phx-value-terrain='forest_pine']") |> render_click()
+      render_hook(view, "hex_selected", %{"q" => 7, "r" => 7})
+
+      # Verify the edge is still there
+      render_hook(view, "hex_hovered", %{"q" => 7, "r" => 7})
+      html = render(view)
+
+      assert html =~ "Edges:"
+      assert html =~ "SE:"
+      assert html =~ "Pine" or html =~ "forest_pine"
     end
   end
 

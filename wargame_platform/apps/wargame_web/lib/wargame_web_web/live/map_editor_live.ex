@@ -196,40 +196,84 @@ defmodule WargameWebWeb.MapEditorLive do
 
           <!-- Edge Feature Selection -->
           <div :if={@tool == :edge} class="mb-4">
-            <h3 class="text-sm font-semibold text-gray-400 mb-1">Water Type</h3>
-            <div class="flex flex-wrap gap-1 mb-3">
-              <button
-                :for={feature <- @edge_features}
-                phx-click="select_edge_feature"
-                phx-value-feature={feature}
-                class={"px-2 py-1 rounded text-xs #{if @selected_edge_feature == feature, do: "bg-blue-600", else: "bg-gray-600 hover:bg-gray-500"}"}
-              >
-                {feature_label(feature)}
-              </button>
+            <h3 class="text-sm font-semibold text-gray-400 mb-2">Water Type</h3>
+            <div class="flex gap-3">
+              <!-- Left column: Water type palette -->
+              <div class="flex flex-col gap-1">
+                <button
+                  :for={feature <- [:small_stream, :large_stream, :small_river, :large_river]}
+                  phx-click="select_edge_feature"
+                  phx-value-feature={feature}
+                  class={"px-2 py-1 rounded text-xs whitespace-nowrap #{if @selected_edge_feature == feature, do: "bg-blue-600", else: "bg-gray-600 hover:bg-gray-500"}"}
+                >
+                  {feature_label(feature)}
+                </button>
+              </div>
+
+              <!-- Right column: SVG mini-hexagon (pointy-top, matching map) -->
+              <div class="flex flex-col items-center">
+                <p class="text-xs text-gray-500 mb-1">Click edges:</p>
+                <svg viewBox="0 0 100 100" class="w-20 h-20">
+                  <!-- Hex fill (pointy-top orientation) -->
+                  <polygon
+                    points={hex_points()}
+                    fill="#374151"
+                    stroke="#6B7280"
+                    stroke-width="1"
+                  />
+
+                  <!-- Visible edge styling based on selection (render first, behind clickable areas) -->
+                  <%= for edge <- 0..5 do %>
+                    <% {{x1, y1}, {x2, y2}} = edge_coords(edge) %>
+                    <%= if MapSet.member?(@selected_water_edges, edge) do %>
+                      <line
+                        x1={x1}
+                        y1={y1}
+                        x2={x2}
+                        y2={y2}
+                        stroke={edge_color(@selected_edge_feature)}
+                        stroke-width={edge_stroke_width(@selected_edge_feature)}
+                        stroke-linecap="round"
+                      />
+                    <% end %>
+                  <% end %>
+
+                  <!-- Clickable edge segments (wider invisible stroke for easy clicking) -->
+                  <%= for edge <- 0..5 do %>
+                    <% {{x1, y1}, {x2, y2}} = edge_coords(edge) %>
+                    <line
+                      x1={x1}
+                      y1={y1}
+                      x2={x2}
+                      y2={y2}
+                      stroke="transparent"
+                      stroke-width="14"
+                      class="cursor-pointer hover:stroke-white/20"
+                      phx-click="toggle_water_edge"
+                      phx-value-edge={edge}
+                    />
+                  <% end %>
+
+                  <!-- Edge labels (positioned for pointy-top hex edges) -->
+                  <!-- Edge 0 (N): top to upper-right slant -->
+                  <!-- Edge 1 (NE): right vertical edge -->
+                  <!-- Edge 2 (SE): lower-right to bottom slant -->
+                  <!-- Edge 3 (S): bottom to lower-left slant -->
+                  <!-- Edge 4 (SW): left vertical edge -->
+                  <!-- Edge 5 (NW): upper-left to top slant -->
+                  <text x="72" y="12" text-anchor="start" fill="#9CA3AF" font-size="7">N</text>
+                  <text x="92" y="52" text-anchor="start" fill="#9CA3AF" font-size="7">NE</text>
+                  <text x="72" y="90" text-anchor="start" fill="#9CA3AF" font-size="7">SE</text>
+                  <text x="28" y="90" text-anchor="end" fill="#9CA3AF" font-size="7">S</text>
+                  <text x="8" y="52" text-anchor="end" fill="#9CA3AF" font-size="7">SW</text>
+                  <text x="28" y="12" text-anchor="end" fill="#9CA3AF" font-size="7">NW</text>
+                </svg>
+              </div>
             </div>
 
-            <h4 class="text-xs font-semibold text-gray-400 mb-1">Edges</h4>
-            <div class="flex flex-wrap gap-1 mb-3">
-              <button
-                :for={dir <- 0..5}
-                phx-click="toggle_water_edge"
-                phx-value-edge={dir}
-                class={"px-2 py-1 rounded text-xs #{if MapSet.member?(@selected_water_edges, dir), do: "bg-cyan-600", else: "bg-gray-600 hover:bg-gray-500"}"}
-              >
-                {direction_label(dir)}
-              </button>
-            </div>
-
-            <p class="text-xs text-gray-500 mb-2">
-              Select edges then click hex. Use "None" to clear.
+            <p class="text-xs text-gray-500 mt-2">
+              Select type, toggle edges, then click hex on map.
             </p>
-
-            <button
-              phx-click="clear_water_edge_selection"
-              class="w-full px-2 py-1 rounded text-xs bg-gray-700 hover:bg-gray-600"
-            >
-              Clear Edge Selection
-            </button>
           </div>
 
           <!-- Overlay Selection -->
@@ -1313,34 +1357,38 @@ defmodule WargameWebWeb.MapEditorLive do
 
   defp apply_edge_tool(socket, %{q: q, r: r}) do
     water_edges = socket.assigns.selected_water_edges
+    socket = push_history(socket)
+    coord = Coord.new(q, r)
+    feature = socket.assigns.selected_edge_feature
 
-    # Only apply if at least one edge is selected
-    if MapSet.size(water_edges) == 0 do
-      socket
-    else
-      socket = push_history(socket)
-      coord = Coord.new(q, r)
-      feature = socket.assigns.selected_edge_feature
-
-      case GameMap.update_tile(socket.assigns.map, coord, fn tile ->
-             Enum.reduce(MapSet.to_list(water_edges), tile, fn edge, acc_tile ->
+    # The mini-hex represents the desired state of the tile's edges.
+    # Selected edges get the selected feature; unselected edges are cleared.
+    case GameMap.update_tile(socket.assigns.map, coord, fn tile ->
+           Enum.reduce(0..5, tile, fn edge, acc_tile ->
+             if MapSet.member?(water_edges, edge) do
                if feature == :none do
-                 # Clear features from selected edges
+                 # Edge selected but feature is :none -> clear this edge
                  Tile.clear_edge(acc_tile, edge)
                else
-                 # Add the feature to selected edges
-                 Tile.add_edge_feature(acc_tile, edge, feature)
+                 # Edge selected with a feature -> set this edge to the feature
+                 # First clear any existing features, then add the new one
+                 acc_tile
+                 |> Tile.clear_edge(edge)
+                 |> Tile.add_edge_feature(edge, feature)
                end
-             end)
-           end) do
-        {:ok, map} ->
-          socket
-          |> assign(:map, map)
-          |> update_tiles([coord])
+             else
+               # Edge not selected -> clear it
+               Tile.clear_edge(acc_tile, edge)
+             end
+           end)
+         end) do
+      {:ok, map} ->
+        socket
+        |> assign(:map, map)
+        |> update_tiles([coord])
 
-        {:error, _} ->
-          socket
-      end
+      {:error, _} ->
+        socket
     end
   end
 
@@ -2027,6 +2075,42 @@ defmodule WargameWebWeb.MapEditorLive do
   end
 
   defp feature_label(feature), do: feature
+
+  # SVG mini-hex coordinates for edge tool UI (pointy-top orientation, matching map)
+  # For a pointy-top hex in a 100x100 viewBox centered at (50, 50) with radius ~43:
+  # Vertices are at angles starting at -30° going clockwise (same as renderer):
+  #   Vertex 0: Upper-right (2 o'clock)  = (87, 28.5)
+  #   Vertex 1: Lower-right (4 o'clock)  = (87, 71.5)
+  #   Vertex 2: Bottom (6 o'clock)       = (50, 93)
+  #   Vertex 3: Lower-left (8 o'clock)   = (13, 71.5)
+  #   Vertex 4: Upper-left (10 o'clock)  = (13, 28.5)
+  #   Vertex 5: Top (12 o'clock)         = (50, 7)
+  #
+  # Edge numbering: 0=N, 1=NE, 2=SE, 3=S, 4=SW, 5=NW
+  # Edge connects vertex pairs: N=[5,0], NE=[0,1], SE=[1,2], S=[2,3], SW=[3,4], NW=[4,5]
+
+  defp hex_points do
+    "87,28.5 87,71.5 50,93 13,71.5 13,28.5 50,7"
+  end
+
+  defp edge_coords(0), do: {{50, 7}, {87, 28.5}}    # N: vertex 5 to vertex 0 (top to upper-right)
+  defp edge_coords(1), do: {{87, 28.5}, {87, 71.5}} # NE: vertex 0 to vertex 1 (upper-right to lower-right)
+  defp edge_coords(2), do: {{87, 71.5}, {50, 93}}   # SE: vertex 1 to vertex 2 (lower-right to bottom)
+  defp edge_coords(3), do: {{50, 93}, {13, 71.5}}   # S: vertex 2 to vertex 3 (bottom to lower-left)
+  defp edge_coords(4), do: {{13, 71.5}, {13, 28.5}} # SW: vertex 3 to vertex 4 (lower-left to upper-left)
+  defp edge_coords(5), do: {{13, 28.5}, {50, 7}}    # NW: vertex 4 to vertex 5 (upper-left to top)
+
+  defp edge_color(:none), do: "#4B5563"
+  defp edge_color(:small_stream), do: "#87CEEB"
+  defp edge_color(:large_stream), do: "#87CEEB"
+  defp edge_color(:small_river), do: "#4682B4"
+  defp edge_color(:large_river), do: "#4682B4"
+
+  defp edge_stroke_width(:none), do: 2
+  defp edge_stroke_width(:small_stream), do: 4
+  defp edge_stroke_width(:large_stream), do: 6
+  defp edge_stroke_width(:small_river), do: 8
+  defp edge_stroke_width(:large_river), do: 10
 
   defp direction_label(0), do: "N"
   defp direction_label(1), do: "NE"
