@@ -62,6 +62,9 @@ defmodule WargameWebWeb.MapEditorLive do
       |> assign(:line_start, nil)
       |> assign(:save_status, nil)
       |> assign(:modal, nil)
+      |> assign(:elevation_loading, false)
+      |> assign(:elevation_status, nil)
+      |> assign(:elevation_message, nil)
 
     {:ok, socket}
   end
@@ -93,9 +96,14 @@ defmodule WargameWebWeb.MapEditorLive do
           </button>
           <button
             phx-click="show_resize_modal"
-            class="bg-gray-600 hover:bg-gray-500 px-3 py-1 rounded text-sm"
+            class="bg-gray-600 hover:bg-gray-500 px-3 py-1 rounded text-sm flex items-center gap-1"
+            title="Map Settings (resize, centerpoint, elevation)"
           >
-            Resize
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Settings
           </button>
           <button
             phx-click="load_map"
@@ -609,7 +617,7 @@ defmodule WargameWebWeb.MapEditorLive do
       <%= if @modal == :resize do %>
         <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full">
-            <h2 class="text-xl font-bold text-white mb-4">Resize Map</h2>
+            <h2 class="text-xl font-bold text-white mb-4">Map Settings</h2>
             <form phx-submit="resize_map" class="space-y-4">
               <div>
                 <label class="block text-sm text-gray-400 mb-1">Width (hexes)</label>
@@ -698,6 +706,36 @@ defmodule WargameWebWeb.MapEditorLive do
                   />
                 </div>
               </div>
+
+              <!-- Elevation Data Section -->
+              <div class="mt-4 pt-4 border-t border-gray-600">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h4 class="text-sm font-semibold text-gray-400">Elevation Data</h4>
+                    <p class="text-xs text-gray-500">
+                      Auto-fetch elevation from Open-Meteo API
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    phx-click="fetch_elevations"
+                    disabled={@map.centerpoint_lat == nil or @map.centerpoint_lng == nil or @elevation_loading}
+                    class={"px-3 py-1.5 rounded text-sm #{if @map.centerpoint_lat && @map.centerpoint_lng && !@elevation_loading, do: "bg-green-600 hover:bg-green-500 text-white", else: "bg-gray-600 text-gray-400 cursor-not-allowed"}"}
+                  >
+                    <%= if @elevation_loading do %>
+                      Fetching...
+                    <% else %>
+                      Fetch Elevations
+                    <% end %>
+                  </button>
+                </div>
+                <%= if @elevation_status do %>
+                  <p class={"text-xs mt-2 #{if @elevation_status == :success, do: "text-green-400", else: "text-red-400"}"}>
+                    <%= @elevation_message %>
+                  </p>
+                <% end %>
+              </div>
+
               <div class="flex justify-end gap-2 mt-6">
                 <button
                   type="button"
@@ -1125,6 +1163,27 @@ defmodule WargameWebWeb.MapEditorLive do
   end
 
   @impl true
+  def handle_event("fetch_elevations", _params, socket) do
+    # Start async elevation fetch
+    socket =
+      socket
+      |> assign(:elevation_loading, true)
+      |> assign(:elevation_status, nil)
+      |> assign(:elevation_message, nil)
+
+    # Spawn async task to fetch elevations
+    map = socket.assigns.map
+    parent = self()
+
+    Task.start(fn ->
+      result = WargameWeb.Services.ElevationService.fetch_map_elevations(map)
+      send(parent, {:elevation_result, result})
+    end)
+
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_event("save_map", _params, socket) do
     yaml = map_to_yaml(socket.assigns.map, socket.assigns.map_name)
     filename = sanitize_filename(socket.assigns.map_name) <> ".yaml"
@@ -1164,6 +1223,55 @@ defmodule WargameWebWeb.MapEditorLive do
   @impl true
   def handle_info(:clear_save_status, socket) do
     {:noreply, assign(socket, :save_status, nil)}
+  end
+
+  @impl true
+  def handle_info({:elevation_result, {:ok, updated_map}}, socket) do
+    # Count tiles with non-zero elevation for the message
+    non_zero_count =
+      updated_map.tiles
+      |> Map.values()
+      |> Enum.count(fn tile -> tile.elevation != 0 end)
+
+    # Calculate max elevation for informative message
+    max_level =
+      updated_map.tiles
+      |> Map.values()
+      |> Enum.map(& &1.elevation)
+      |> Enum.max(fn -> 0 end)
+
+    socket =
+      socket
+      |> push_history()
+      |> assign(:map, updated_map)
+      |> assign(:elevation_loading, false)
+      |> assign(:elevation_status, :success)
+      |> assign(:elevation_message, "Base: #{updated_map.base_elevation}m, range: 0-#{max_level} levels (#{non_zero_count} tiles with elevation)")
+      |> refresh_map()
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:elevation_result, {:error, :no_centerpoint}}, socket) do
+    socket =
+      socket
+      |> assign(:elevation_loading, false)
+      |> assign(:elevation_status, :error)
+      |> assign(:elevation_message, "Set centerpoint coordinates first")
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:elevation_result, {:error, reason}}, socket) do
+    socket =
+      socket
+      |> assign(:elevation_loading, false)
+      |> assign(:elevation_status, :error)
+      |> assign(:elevation_message, "Failed to fetch elevations: #{inspect(reason)}")
+
+    {:noreply, socket}
   end
 
   # Helper Functions

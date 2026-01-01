@@ -157,34 +157,34 @@ defmodule WargameWebWeb.MapEditorLiveTest do
       assert html =~ "New Map"
     end
 
-    test "can open resize modal", %{conn: conn} do
+    test "can open settings modal", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/map-editor")
 
-      # Click resize button
-      view |> element("button", "Resize") |> render_click()
+      # Click settings button
+      view |> element("button", "Settings") |> render_click()
       html = render(view)
-      assert html =~ "Resize Map"
+      assert html =~ "Map Settings"
       assert html =~ "Width (hexes)"
       assert html =~ "Height (hexes)"
     end
 
-    test "can close resize modal", %{conn: conn} do
+    test "can close settings modal", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/map-editor")
 
       # Open modal
-      view |> element("button", "Resize") |> render_click()
-      assert render(view) =~ "Resize Map"
+      view |> element("button", "Settings") |> render_click()
+      assert render(view) =~ "phx-submit=\"resize_map\""
 
       # Close modal
       view |> element("button", "Cancel") |> render_click()
-      refute render(view) =~ "Resize Map"
+      refute render(view) =~ "phx-submit=\"resize_map\""
     end
 
     test "can resize map", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/map-editor")
 
-      # Open resize modal
-      view |> element("button", "Resize") |> render_click()
+      # Open settings modal
+      view |> element("button", "Settings") |> render_click()
 
       # Submit resize form
       view
@@ -192,7 +192,7 @@ defmodule WargameWebWeb.MapEditorLiveTest do
       |> render_submit(%{"width" => "30", "height" => "25", "scale" => "100"})
 
       html = render(view)
-      refute html =~ "Resize Map"  # Modal closed
+      refute html =~ "phx-submit=\"resize_map\""  # Modal closed
       assert html =~ "30 x 25"  # New size shown
     end
   end
@@ -675,23 +675,23 @@ defmodule WargameWebWeb.MapEditorLiveTest do
     end
   end
 
-  describe "map metadata in resize modal" do
-    test "resize modal shows version field", %{conn: conn} do
+  describe "map metadata in settings modal" do
+    test "settings modal shows version field", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/map-editor")
 
-      # Open resize modal
-      view |> element("button", "Resize") |> render_click()
+      # Open settings modal
+      view |> element("button", "Settings") |> render_click()
       html = render(view)
 
       assert html =~ "Version"
       assert html =~ ~r/name="version"/
     end
 
-    test "resize modal shows centerpoint fields", %{conn: conn} do
+    test "settings modal shows centerpoint fields", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/map-editor")
 
-      # Open resize modal
-      view |> element("button", "Resize") |> render_click()
+      # Open settings modal
+      view |> element("button", "Settings") |> render_click()
       html = render(view)
 
       assert html =~ "Centerpoint Lat"
@@ -700,11 +700,11 @@ defmodule WargameWebWeb.MapEditorLiveTest do
       assert html =~ ~r/name="centerpoint_lng"/
     end
 
-    test "resize modal shows base elevation field", %{conn: conn} do
+    test "settings modal shows base elevation field", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/map-editor")
 
-      # Open resize modal
-      view |> element("button", "Resize") |> render_click()
+      # Open settings modal
+      view |> element("button", "Settings") |> render_click()
       html = render(view)
 
       assert html =~ "Base Elevation"
@@ -714,8 +714,8 @@ defmodule WargameWebWeb.MapEditorLiveTest do
     test "can resize map with version", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/map-editor")
 
-      # Open resize modal
-      view |> element("button", "Resize") |> render_click()
+      # Open settings modal
+      view |> element("button", "Settings") |> render_click()
 
       # Submit resize form with version
       view
@@ -731,15 +731,15 @@ defmodule WargameWebWeb.MapEditorLiveTest do
       })
 
       html = render(view)
-      refute html =~ "Resize Map"
+      refute html =~ "phx-submit=\"resize_map\""
       assert html =~ "30 x 25"
     end
 
     test "can resize map with centerpoint coordinates", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/map-editor")
 
-      # Open resize modal
-      view |> element("button", "Resize") |> render_click()
+      # Open settings modal
+      view |> element("button", "Settings") |> render_click()
 
       # Submit resize form with centerpoint
       view
@@ -755,14 +755,14 @@ defmodule WargameWebWeb.MapEditorLiveTest do
       })
 
       html = render(view)
-      refute html =~ "Resize Map"
+      refute html =~ "phx-submit=\"resize_map\""
       assert html =~ "20 x 15"
     end
 
     test "resize map handles empty centerpoint fields", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/map-editor")
 
-      view |> element("button", "Resize") |> render_click()
+      view |> element("button", "Settings") |> render_click()
 
       view
       |> element("form")
@@ -778,14 +778,14 @@ defmodule WargameWebWeb.MapEditorLiveTest do
 
       # Should not crash and modal should close
       html = render(view)
-      refute html =~ "Resize Map"
+      refute html =~ "phx-submit=\"resize_map\""
       assert html =~ "10 x 10"
     end
 
     test "resize map handles negative centerpoint values", %{conn: conn} do
       {:ok, view, _html} = live(conn, "/map-editor")
 
-      view |> element("button", "Resize") |> render_click()
+      view |> element("button", "Settings") |> render_click()
 
       # Los Angeles coordinates (negative longitude)
       view
@@ -801,8 +801,49 @@ defmodule WargameWebWeb.MapEditorLiveTest do
       })
 
       html = render(view)
-      refute html =~ "Resize Map"
+      refute html =~ "phx-submit=\"resize_map\""
       assert html =~ "15 x 15"
+    end
+
+    test "fetch elevations button is enabled after setting centerpoint", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/map-editor")
+
+      # Open settings modal and set centerpoint
+      view |> element("button", "Settings") |> render_click()
+
+      view
+      |> element("form")
+      |> render_submit(%{
+        "width" => "10",
+        "height" => "10",
+        "scale" => "200",
+        "base_elevation" => "100",
+        "version" => "1.0",
+        "centerpoint_lat" => "51.7373",
+        "centerpoint_lng" => "36.1873"
+      })
+
+      # Re-open settings modal
+      view |> element("button", "Settings") |> render_click()
+      html = render(view)
+
+      # The Fetch Elevations button should NOT be disabled
+      refute html =~ ~r/phx-click="fetch_elevations"[^>]*disabled/
+      # And should have the green button class
+      assert html =~ ~r/phx-click="fetch_elevations"[^>]*bg-green-600/
+    end
+
+    test "fetch elevations button is disabled when no centerpoint", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/map-editor")
+
+      # Open settings modal without setting centerpoint
+      view |> element("button", "Settings") |> render_click()
+      html = render(view)
+
+      # The Fetch Elevations button should be disabled
+      assert html =~ ~r/phx-click="fetch_elevations"[^>]*disabled/
+      # And should have the gray button class
+      assert html =~ ~r/phx-click="fetch_elevations"[^>]*bg-gray-600/
     end
   end
 
