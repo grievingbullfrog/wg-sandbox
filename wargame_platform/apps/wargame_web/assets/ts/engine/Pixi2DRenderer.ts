@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Text, TextStyle } from "pixi.js";
+import { Application, Assets, Container, Graphics, Sprite, Text, TextStyle, Texture } from "pixi.js";
 import { HexCoord, hexToPixel, pixelToHex, AxialCoord } from "../hex/coord";
 
 /**
@@ -127,6 +127,8 @@ export interface Pixi2DRendererConfig {
   tileOverlay: TileOverlayMode;
   elevationToolActive: boolean;
   baseElevation: number;
+  satelliteOpacity: number;
+  showSatellite: boolean;
 }
 
 const DEFAULT_CONFIG: Pixi2DRendererConfig = {
@@ -137,7 +139,44 @@ const DEFAULT_CONFIG: Pixi2DRendererConfig = {
   tileOverlay: "none",
   elevationToolActive: false,
   baseElevation: 0,
+  satelliteOpacity: 0.5,
+  showSatellite: false,
 };
+
+/**
+ * Satellite tile data received from backend
+ */
+export interface SatelliteTile {
+  url: string;
+  x: number;
+  y: number;
+  north: number;
+  south: number;
+  west: number;
+  east: number;
+}
+
+/**
+ * Satellite data structure from backend
+ */
+export interface SatelliteData {
+  zoom: number;
+  tiles: SatelliteTile[];
+  bounds: {
+    north: number;
+    south: number;
+    west: number;
+    east: number;
+  };
+  center: {
+    lat: number;
+    lng: number;
+  };
+  map_extent_meters: {
+    width: number;
+    height: number;
+  };
+}
 
 /**
  * Highlight modes for hexes
@@ -157,6 +196,7 @@ const HIGHLIGHT_COLORS: Record<HighlightMode, { color: number; alpha: number }> 
  */
 export class Pixi2DRenderer {
   private app: Application;
+  private satelliteContainer: Container;
   private mapContainer: Container;
   private edgeContainer: Container;
   private overlayContainer: Container;
@@ -177,10 +217,15 @@ export class Pixi2DRenderer {
   private dragStartPos = { x: 0, y: 0 };
   private mapWidth = 0;
   private mapHeight = 0;
+  // Satellite background state
+  private satelliteData: SatelliteData | null = null;
+  private satelliteSprites: Sprite[] = [];
+  private satelliteMask: Graphics | null = null;
 
   constructor(config: Partial<Pixi2DRendererConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.app = new Application();
+    this.satelliteContainer = new Container();
     this.mapContainer = new Container();
     this.edgeContainer = new Container();
     this.overlayContainer = new Container();
@@ -205,7 +250,9 @@ export class Pixi2DRenderer {
     });
 
     // Set up container hierarchy (order matters for z-index)
+    // Satellite overlays on top of map with adjustable opacity
     this.app.stage.addChild(this.mapContainer);
+    this.app.stage.addChild(this.satelliteContainer);  // Above map, below edges
     this.app.stage.addChild(this.edgeContainer);
     this.app.stage.addChild(this.overlayContainer);
     this.app.stage.addChild(this.highlightContainer);
@@ -301,6 +348,7 @@ export class Pixi2DRenderer {
    */
   private panCamera(dx: number, dy: number): void {
     const containers = [
+      this.satelliteContainer,
       this.mapContainer,
       this.edgeContainer,
       this.overlayContainer,
@@ -329,6 +377,7 @@ export class Pixi2DRenderer {
     const worldPosBefore = this.screenToWorld(screenX, screenY);
 
     const containers = [
+      this.satelliteContainer,
       this.mapContainer,
       this.edgeContainer,
       this.overlayContainer,
@@ -1287,6 +1336,7 @@ export class Pixi2DRenderer {
     const targetY = this.app.screen.height / 2 - y * scale;
 
     const containers = [
+      this.satelliteContainer,
       this.mapContainer,
       this.edgeContainer,
       this.overlayContainer,
@@ -1360,6 +1410,8 @@ export class Pixi2DRenderer {
    */
   setConfig(config: Partial<Pixi2DRendererConfig>): void {
     const wasElevationToolActive = this.config.elevationToolActive;
+    const wasShowSatellite = this.config.showSatellite;
+    const oldOpacity = this.config.satelliteOpacity;
     this.config = { ...this.config, ...config };
 
     // Hide elevation popup when elevation tool is deactivated
@@ -1369,6 +1421,16 @@ export class Pixi2DRenderer {
     // Show elevation popup if elevation tool is now active and we have a hovered hex
     if (!wasElevationToolActive && this.config.elevationToolActive && this.hoveredHex) {
       this.showElevationPopup(this.hoveredHex);
+    }
+
+    // Update satellite visibility
+    if (wasShowSatellite !== this.config.showSatellite) {
+      this.satelliteContainer.visible = this.config.showSatellite;
+    }
+
+    // Update satellite opacity if changed
+    if (oldOpacity !== this.config.satelliteOpacity) {
+      this.satelliteContainer.alpha = this.config.satelliteOpacity;
     }
   }
 
@@ -1421,5 +1483,186 @@ export class Pixi2DRenderer {
    */
   getUIContainer(): Container {
     return this.uiContainer;
+  }
+
+  /**
+   * Load and display satellite imagery
+   *
+   * @param data - Satellite data from backend including tiles and bounds
+   * @param mapScale - Meters per hex from map configuration
+   * @param mapWidth - Map width in hexes
+   * @param mapHeight - Map height in hexes
+   */
+  async loadSatelliteData(
+    data: SatelliteData,
+    mapScale: number,
+    mapWidth?: number,
+    mapHeight?: number
+  ): Promise<void> {
+    // Clear existing satellite sprites
+    this.clearSatellite();
+
+    // Store the data for reference
+    this.satelliteData = data;
+
+    // Use passed dimensions or fall back to stored values
+    const width = mapWidth ?? this.mapWidth;
+    const height = mapHeight ?? this.mapHeight;
+
+    console.log("loadSatelliteData - dimensions:", { width, height, hexSize: this.config.hexSize });
+    console.log("loadSatelliteData - bounds:", data.bounds);
+    console.log("loadSatelliteData - tiles count:", data.tiles.length);
+
+    if (width === 0 || height === 0) {
+      console.error("Cannot load satellite data: map dimensions not set");
+      return;
+    }
+
+    // Calculate the pixel dimensions of the map
+    // For pointy-top hexes:
+    //   hex_width (horizontal spacing) = hexSize * sqrt(3)
+    //   hex_height (vertical spacing) = hexSize * 1.5
+    const hexWidth = this.config.hexSize * Math.sqrt(3);
+    const hexHeight = this.config.hexSize * 1.5;
+
+    // Map dimensions in pixels
+    const mapWidthPixels = hexWidth * width;
+    const mapHeightPixels = hexHeight * height;
+
+    console.log("loadSatelliteData - map pixels:", { mapWidthPixels, mapHeightPixels });
+
+    // Map bounds in lat/lng
+    const { north, south, west, east } = data.bounds;
+
+    // Calculate pixels per degree
+    const lngRange = east - west;
+    const latRange = north - south;
+    const pixelsPerDegreeLng = mapWidthPixels / lngRange;
+    const pixelsPerDegreeLat = mapHeightPixels / latRange;
+
+    console.log("loadSatelliteData - pixels per degree:", { pixelsPerDegreeLng, pixelsPerDegreeLat });
+
+    // Load each tile
+    const loadPromises = data.tiles.map(async (tile) => {
+      try {
+        console.log("Loading tile:", tile.url);
+        // Load the texture from the tile URL using Assets.load for proper caching
+        const texture = await Assets.load<Texture>(tile.url);
+        const sprite = new Sprite(texture);
+
+        // Calculate tile position in pixels relative to map origin
+        // The map origin (0,0) is at the top-left corner in pixel space
+        // which corresponds to the northwest corner in geo coordinates
+        const tileWest = tile.west;
+        const tileNorth = tile.north;
+
+        // Position from the map's west/north bounds
+        const x = (tileWest - west) * pixelsPerDegreeLng;
+        const y = (north - tileNorth) * pixelsPerDegreeLat;
+
+        // Calculate tile dimensions in pixels
+        const tileWidth = (tile.east - tile.west) * pixelsPerDegreeLng;
+        const tileHeight = (tileNorth - tile.south) * pixelsPerDegreeLat;
+
+        console.log("Tile position:", { x, y, tileWidth, tileHeight });
+
+        sprite.x = x;
+        sprite.y = y;
+        sprite.width = tileWidth;
+        sprite.height = tileHeight;
+
+        this.satelliteSprites.push(sprite);
+        this.satelliteContainer.addChild(sprite);
+        console.log("Tile added successfully");
+      } catch (error) {
+        console.warn(`Failed to load satellite tile ${tile.url}:`, error);
+      }
+    });
+
+    await Promise.all(loadPromises);
+
+    console.log("All tiles loaded, sprites count:", this.satelliteSprites.length);
+
+    // Create a mask to clip satellite imagery to the hex map bounds
+    // Calculate the pixel bounds of the hex map
+    const hexWidthPx = this.config.hexSize * Math.sqrt(3);
+    const hexHeightPx = this.config.hexSize * 2;
+    const vertSpacing = hexHeightPx * 0.75;
+
+    // Map bounds in pixels:
+    // - Left edge: hex (0,0) center minus half hex width
+    // - Right edge: hex (width-1, even row) plus half hex width, or odd row plus full hex width
+    // - Top edge: hex (0,0) center minus half hex height
+    // - Bottom edge: hex (0, height-1) center plus half hex height
+    const minX = -hexWidthPx / 2;
+    const maxX = (width - 1) * hexWidthPx + hexWidthPx / 2 + hexWidthPx / 2; // Extra for odd row offset
+    const minY = -hexHeightPx / 2;
+    const maxY = (height - 1) * vertSpacing + hexHeightPx / 2;
+
+    console.log("Satellite mask bounds:", { minX, maxX, minY, maxY });
+
+    // Create the mask
+    if (this.satelliteMask) {
+      this.satelliteMask.destroy();
+    }
+    this.satelliteMask = new Graphics();
+    this.satelliteMask.rect(minX, minY, maxX - minX, maxY - minY);
+    this.satelliteMask.fill(0xffffff);
+
+    // Apply mask to satellite container
+    this.satelliteContainer.mask = this.satelliteMask;
+    this.satelliteContainer.addChild(this.satelliteMask);
+
+    // Make visible immediately after loading
+    this.satelliteContainer.visible = true;
+    this.config.showSatellite = true;
+    this.satelliteContainer.alpha = this.config.satelliteOpacity;
+  }
+
+  /**
+   * Clear all satellite imagery
+   */
+  clearSatellite(): void {
+    for (const sprite of this.satelliteSprites) {
+      sprite.destroy();
+    }
+    this.satelliteSprites = [];
+    this.satelliteContainer.removeChildren();
+    this.satelliteContainer.mask = null;
+    if (this.satelliteMask) {
+      this.satelliteMask.destroy();
+      this.satelliteMask = null;
+    }
+    this.satelliteData = null;
+  }
+
+  /**
+   * Set satellite overlay opacity (0-1)
+   */
+  setSatelliteOpacity(opacity: number): void {
+    this.config.satelliteOpacity = Math.max(0, Math.min(1, opacity));
+    this.satelliteContainer.alpha = this.config.satelliteOpacity;
+  }
+
+  /**
+   * Toggle satellite visibility
+   */
+  setSatelliteVisible(visible: boolean): void {
+    this.config.showSatellite = visible;
+    this.satelliteContainer.visible = visible;
+  }
+
+  /**
+   * Check if satellite data is loaded
+   */
+  hasSatelliteData(): boolean {
+    return this.satelliteData !== null && this.satelliteSprites.length > 0;
+  }
+
+  /**
+   * Get the satellite container
+   */
+  getSatelliteContainer(): Container {
+    return this.satelliteContainer;
   }
 }

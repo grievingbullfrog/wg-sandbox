@@ -22,10 +22,13 @@ defmodule WargameWebWeb.Router do
     live "/map-editor", MapEditorLive
   end
 
-  # Other scopes may use custom stacks.
-  # scope "/api", WargameWebWeb do
-  #   pipe_through :api
-  # end
+  # Tile proxy for satellite imagery (bypasses CORS)
+  # Uses wildcard to capture the full path including .png extension
+  scope "/api", WargameWebWeb do
+    pipe_through :api
+
+    get "/tiles/*path", TileProxyController, :proxy
+  end
 
   # Enable LiveDashboard in development
   if Application.compile_env(:wargame_web, :dev_routes) do

@@ -65,6 +65,10 @@ defmodule WargameWebWeb.MapEditorLive do
       |> assign(:elevation_loading, false)
       |> assign(:elevation_status, nil)
       |> assign(:elevation_message, nil)
+      |> assign(:satellite_loading, false)
+      |> assign(:satellite_loaded, false)
+      |> assign(:satellite_visible, false)
+      |> assign(:satellite_opacity, 50)
 
     {:ok, socket}
   end
@@ -125,7 +129,7 @@ defmodule WargameWebWeb.MapEditorLive do
 
       <div class="flex flex-1 overflow-hidden">
         <!-- Left Toolbar -->
-        <aside class="w-56 bg-gray-800 text-white p-3 overflow-y-auto border-r border-gray-700">
+        <aside class="w-56 min-w-56 shrink-0 bg-gray-800 text-white p-3 overflow-y-auto border-r border-gray-700">
           <!-- Tools -->
           <div class="mb-4">
             <h3 class="text-sm font-semibold text-gray-400 mb-1">Tools</h3>
@@ -445,6 +449,62 @@ defmodule WargameWebWeb.MapEditorLive do
             </div>
           </div>
 
+          <!-- Satellite Overlay -->
+          <div class="mb-4">
+            <h3 class="text-sm font-semibold text-gray-400 mb-1">Satellite Overlay</h3>
+            <div class="space-y-2">
+              <%= if @satellite_loaded do %>
+                <label class="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={@satellite_visible}
+                    phx-click="toggle_satellite"
+                    class="rounded"
+                  />
+                  Show Satellite
+                </label>
+                <%= if @satellite_visible do %>
+                  <form phx-change="set_satellite_opacity" class="mb-2">
+                    <label class="block text-xs text-gray-500 mb-1">Opacity: {@satellite_opacity}%</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={@satellite_opacity}
+                      name="opacity"
+                      class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </form>
+                <% end %>
+                <button
+                  phx-click="clear_satellite"
+                  class="w-full px-2 py-1 rounded text-xs bg-gray-700 hover:bg-gray-600"
+                >
+                  Clear Satellite
+                </button>
+              <% else %>
+                <button
+                  phx-click="fetch_satellite"
+                  disabled={@map.centerpoint_lat == nil or @map.centerpoint_lng == nil or @satellite_loading}
+                  class={"w-full px-2 py-1.5 rounded text-xs #{if @map.centerpoint_lat && @map.centerpoint_lng && !@satellite_loading, do: "bg-blue-600 hover:bg-blue-500 text-white", else: "bg-gray-600 text-gray-400 cursor-not-allowed"}"}
+                >
+                  <%= if @satellite_loading do %>
+                    Loading...
+                  <% else %>
+                    Fetch Satellite
+                  <% end %>
+                </button>
+                <p class="text-xs text-gray-500">
+                  <%= if @map.centerpoint_lat && @map.centerpoint_lng do %>
+                    Click to load satellite imagery
+                  <% else %>
+                    Set centerpoint in Settings first
+                  <% end %>
+                </p>
+              <% end %>
+            </div>
+          </div>
+
           <!-- Undo/Redo -->
           <div class="mb-4">
             <h3 class="text-sm font-semibold text-gray-400 mb-1">History</h3>
@@ -484,7 +544,7 @@ defmodule WargameWebWeb.MapEditorLive do
         </main>
 
         <!-- Right Panel - Hex Info -->
-        <aside class="w-64 bg-gray-800 text-white p-4 overflow-y-auto border-l border-gray-700">
+        <aside class="w-64 min-w-64 shrink-0 bg-gray-800 text-white p-4 overflow-y-auto border-l border-gray-700">
           <!-- Hovered Hex Info (shows on hover, or selected if not hovering) -->
           <h3 class="text-sm font-semibold text-gray-400 mb-2">Hex Info</h3>
           <% display_hex = @hovered_hex || @selected_hex %>
@@ -1220,6 +1280,73 @@ defmodule WargameWebWeb.MapEditorLive do
     end
   end
 
+  # Satellite imagery events
+
+  @impl true
+  def handle_event("fetch_satellite", _params, socket) do
+    map = socket.assigns.map
+
+    if map.centerpoint_lat && map.centerpoint_lng do
+      socket = assign(socket, :satellite_loading, true)
+
+      parent = self()
+
+      Task.start(fn ->
+        result =
+          WargameWeb.Services.SatelliteImageService.get_satellite_tiles(
+            map.centerpoint_lat,
+            map.centerpoint_lng,
+            map.scale,
+            map.width,
+            map.height
+          )
+
+        send(parent, {:satellite_result, result})
+      end)
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("toggle_satellite", _params, socket) do
+    visible = !socket.assigns.satellite_visible
+
+    socket =
+      socket
+      |> assign(:satellite_visible, visible)
+      |> push_event("set_satellite_visible", %{visible: visible})
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("set_satellite_opacity", %{"opacity" => opacity_str}, socket) do
+    opacity = String.to_integer(opacity_str)
+
+    socket =
+      socket
+      |> assign(:satellite_opacity, opacity)
+      |> push_event("set_satellite_opacity", %{opacity: opacity / 100})
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("clear_satellite", _params, socket) do
+    socket =
+      socket
+      |> assign(:satellite_loaded, false)
+      |> assign(:satellite_visible, false)
+      |> push_event("clear_satellite", %{})
+
+    {:noreply, socket}
+  end
+
+  # handle_info callbacks
+
   @impl true
   def handle_info(:clear_save_status, socket) do
     {:noreply, assign(socket, :save_status, nil)}
@@ -1270,6 +1397,39 @@ defmodule WargameWebWeb.MapEditorLive do
       |> assign(:elevation_loading, false)
       |> assign(:elevation_status, :error)
       |> assign(:elevation_message, "Failed to fetch elevations: #{inspect(reason)}")
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:satellite_result, {:ok, satellite_data}}, socket) do
+    map = socket.assigns.map
+
+    socket =
+      socket
+      |> assign(:satellite_loading, false)
+      |> assign(:satellite_loaded, true)
+      |> assign(:satellite_visible, true)
+      |> push_event("load_satellite", %{
+        satellite_data: satellite_data,
+        map_scale: map.scale,
+        map_width: map.width,
+        map_height: map.height
+      })
+      |> push_event("set_satellite_visible", %{visible: true})
+      |> push_event("set_satellite_opacity", %{opacity: socket.assigns.satellite_opacity / 100})
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:satellite_result, {:error, reason}}, socket) do
+    require Logger
+    Logger.error("Failed to fetch satellite data: #{inspect(reason)}")
+
+    socket =
+      socket
+      |> assign(:satellite_loading, false)
 
     {:noreply, socket}
   end

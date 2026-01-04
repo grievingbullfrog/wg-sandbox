@@ -1,4 +1,4 @@
-import { Pixi2DRenderer, TileData, Pixi2DRendererConfig, HexClickModifiers } from "../engine/Pixi2DRenderer";
+import { Pixi2DRenderer, TileData, Pixi2DRendererConfig, HexClickModifiers, SatelliteData } from "../engine/Pixi2DRenderer";
 import { HexCoord } from "../hex/coord";
 import "../types/phoenix.d.ts";
 
@@ -133,6 +133,40 @@ export const MapEditorHook = {
     // File upload request handling
     this.handleEvent("request_file_upload", () => {
       this.requestFileUpload();
+    });
+
+    // Satellite imagery handling
+    this.handleEvent("load_satellite", async (data: unknown) => {
+      const { satellite_data, map_scale, map_width, map_height } = data as {
+        satellite_data: SatelliteData;
+        map_scale: number;
+        map_width: number;
+        map_height: number;
+      };
+      if (this.renderer) {
+        console.log("Loading satellite data:", { satellite_data, map_scale, map_width, map_height });
+        await this.renderer.loadSatelliteData(satellite_data, map_scale, map_width, map_height);
+      }
+    });
+
+    this.handleEvent("clear_satellite", () => {
+      if (this.renderer) {
+        this.renderer.clearSatellite();
+      }
+    });
+
+    this.handleEvent("set_satellite_opacity", (data: unknown) => {
+      const { opacity } = data as { opacity: number };
+      if (this.renderer) {
+        this.renderer.setSatelliteOpacity(opacity);
+      }
+    });
+
+    this.handleEvent("set_satellite_visible", (data: unknown) => {
+      const { visible } = data as { visible: boolean };
+      if (this.renderer) {
+        this.renderer.setSatelliteVisible(visible);
+      }
     });
 
     // Request initial map data from server
