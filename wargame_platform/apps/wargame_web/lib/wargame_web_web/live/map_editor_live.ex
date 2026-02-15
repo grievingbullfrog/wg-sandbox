@@ -69,6 +69,8 @@ defmodule WargameWebWeb.MapEditorLive do
       |> assign(:satellite_loaded, false)
       |> assign(:satellite_visible, false)
       |> assign(:satellite_opacity, 50)
+      |> assign(:map_db_id, nil)
+      |> assign(:db_maps, [])
 
     {:ok, socket}
   end
@@ -112,12 +114,29 @@ defmodule WargameWebWeb.MapEditorLive do
           <button
             phx-click="load_map"
             class="bg-blue-600 hover:bg-blue-500 px-3 py-1 rounded text-sm"
+            title="Load from YAML file"
           >
-            Load
+            Load File
           </button>
           <button
             phx-click="save_map"
             class="bg-green-600 hover:bg-green-500 px-3 py-1 rounded text-sm"
+            title="Export to YAML file"
+          >
+            Export
+          </button>
+          <span class="text-gray-600">|</span>
+          <button
+            phx-click="show_load_db_modal"
+            class="bg-indigo-600 hover:bg-indigo-500 px-3 py-1 rounded text-sm"
+            title="Load from database"
+          >
+            Open
+          </button>
+          <button
+            phx-click="save_to_db"
+            class="bg-emerald-600 hover:bg-emerald-500 px-3 py-1 rounded text-sm"
+            title="Save to database"
           >
             Save
           </button>
@@ -815,6 +834,52 @@ defmodule WargameWebWeb.MapEditorLive do
           </div>
         </div>
       <% end %>
+
+      <%!-- Load from Database Modal --%>
+      <%= if @modal == :load_db do %>
+        <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-lg w-full max-h-96 flex flex-col">
+            <h2 class="text-xl font-bold text-white mb-4">Open Map from Database</h2>
+            <div class="flex-1 overflow-y-auto space-y-2">
+              <%= if @db_maps == [] do %>
+                <p class="text-gray-400 text-sm">No maps saved in database yet.</p>
+              <% else %>
+                <%= for db_map <- @db_maps do %>
+                  <div
+                    class="p-3 bg-gray-700 rounded cursor-pointer hover:bg-gray-600 flex justify-between items-center"
+                    phx-click="load_from_db"
+                    phx-value-id={db_map.id}
+                  >
+                    <div>
+                      <div class="text-white font-medium"><%= db_map.name %></div>
+                      <div class="text-xs text-gray-400">
+                        <%= db_map.width %>x<%= db_map.height %> |
+                        <%= if db_map.description && db_map.description != "", do: db_map.description, else: "No description" %>
+                      </div>
+                    </div>
+                    <button
+                      phx-click="delete_from_db"
+                      phx-value-id={db_map.id}
+                      class="text-red-400 hover:text-red-300 text-xs px-2"
+                      data-confirm="Delete this map permanently?"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                <% end %>
+              <% end %>
+            </div>
+            <div class="flex justify-end mt-4">
+              <button
+                phx-click="close_modal"
+                class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded text-white"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      <% end %>
     </div>
     """
   end
@@ -1277,6 +1342,97 @@ defmodule WargameWebWeb.MapEditorLive do
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Failed to load map: #{reason}")}
+    end
+  end
+
+  # Database persistence events
+
+  @impl true
+  def handle_event("save_to_db", _params, socket) do
+    map = socket.assigns.map
+    metadata = %{description: Map.get(map, :description, "")}
+
+    result =
+      case socket.assigns.map_db_id do
+        nil ->
+          WargamePersistence.Maps.save_game_map(map, metadata)
+
+        _id ->
+          WargamePersistence.Maps.save_game_map(map, metadata)
+      end
+
+    case result do
+      {:ok, db_map} ->
+        socket =
+          socket
+          |> assign(:map_db_id, db_map.id)
+          |> assign(:save_status, "Saved to DB!")
+
+        Process.send_after(self(), :clear_save_status, 3000)
+        {:noreply, socket}
+
+      {:error, changeset} ->
+        {:noreply, put_flash(socket, :error, "DB save failed: #{inspect(changeset.errors)}")}
+    end
+  end
+
+  @impl true
+  def handle_event("show_load_db_modal", _params, socket) do
+    db_maps = WargamePersistence.Maps.list_maps()
+
+    socket =
+      socket
+      |> assign(:db_maps, db_maps)
+      |> assign(:modal, :load_db)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("load_from_db", %{"id" => id}, socket) do
+    case WargamePersistence.Maps.load_game_map(id) do
+      {:ok, game_map} ->
+        socket =
+          socket
+          |> push_history()
+          |> assign(:map, game_map)
+          |> assign(:map_name, game_map.name)
+          |> assign(:map_db_id, id)
+          |> assign(:modal, nil)
+          |> refresh_map()
+
+        {:noreply, socket}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Failed to load map: #{inspect(reason)}")}
+    end
+  end
+
+  @impl true
+  def handle_event("delete_from_db", %{"id" => id}, socket) do
+    case WargamePersistence.Maps.get_map(id) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "Map not found")}
+
+      db_map ->
+        case WargamePersistence.Maps.delete_map(db_map) do
+          {:ok, _} ->
+            db_maps = Enum.reject(socket.assigns.db_maps, &(&1.id == id))
+
+            socket =
+              socket
+              |> assign(:db_maps, db_maps)
+              |> assign(:save_status, "Deleted!")
+
+            if socket.assigns.map_db_id == id do
+              {:noreply, assign(socket, :map_db_id, nil)}
+            else
+              {:noreply, socket}
+            end
+
+          {:error, _} ->
+            {:noreply, put_flash(socket, :error, "Failed to delete map")}
+        end
     end
   end
 

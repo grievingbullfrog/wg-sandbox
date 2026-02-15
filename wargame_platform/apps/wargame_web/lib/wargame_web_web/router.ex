@@ -23,6 +23,10 @@ defmodule WargameWebWeb.Router do
     live "/game/:id", GameLive
     live "/games/new", GameSetupLive
     live "/games", GameListLive
+    live "/unit-editor", UnitEditorLive
+    live "/leader-editor", LeaderEditorLive
+    live "/scenario-editor", ScenarioEditorLive
+    live "/scenario-editor/:id", ScenarioEditorLive
   end
 
   # Tile proxy for satellite imagery (bypasses CORS)
