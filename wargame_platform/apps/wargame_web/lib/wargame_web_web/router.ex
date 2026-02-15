@@ -20,6 +20,9 @@ defmodule WargameWebWeb.Router do
     get "/", PageController, :home
     live "/map-demo", MapDemoLive
     live "/map-editor", MapEditorLive
+    live "/game/:id", GameLive
+    live "/games/new", GameSetupLive
+    live "/games", GameListLive
   end
 
   # Tile proxy for satellite imagery (bypasses CORS)

@@ -13,6 +13,9 @@ config :wargame_web, WargameWebWeb.Endpoint,
   secret_key_base: "/LEIDR9GJkwFk6RG2HtcgwocfhJXnm5z5vUvuDljv5wg7xMTSRYRklAXRXsVoWV3",
   server: false
 
+# Disable game broadcaster during tests
+config :wargame_core, game_broadcaster: nil
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

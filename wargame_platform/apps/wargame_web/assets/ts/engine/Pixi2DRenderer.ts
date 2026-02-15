@@ -1,5 +1,6 @@
 import { Application, Assets, Container, Graphics, Sprite, Text, TextStyle, Texture } from "pixi.js";
 import { HexCoord, hexToPixel, pixelToHex, AxialCoord } from "../hex/coord";
+import { UnitLayerManager, UnitData } from "./UnitRenderer";
 
 /**
  * Terrain type enumeration matching backend terrain types
@@ -221,6 +222,7 @@ export class Pixi2DRenderer {
   private satelliteData: SatelliteData | null = null;
   private satelliteSprites: Sprite[] = [];
   private satelliteMask: Graphics | null = null;
+  private unitLayer: UnitLayerManager | null = null;
 
   constructor(config: Partial<Pixi2DRendererConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -1320,9 +1322,43 @@ export class Pixi2DRenderer {
   }
 
   /**
+   * Get or create the unit layer manager
+   */
+  getUnitLayer(): UnitLayerManager {
+    if (!this.unitLayer) {
+      this.unitLayer = new UnitLayerManager(this.unitContainer, this.config.hexSize);
+    }
+    return this.unitLayer;
+  }
+
+  /**
+   * Render all units on the map
+   */
+  renderUnits(units: UnitData[]): void {
+    this.getUnitLayer().renderUnits(units);
+  }
+
+  /**
+   * Update a single unit's display
+   */
+  updateUnit(unit: UnitData): void {
+    this.getUnitLayer().updateUnit(unit);
+  }
+
+  /**
+   * Remove a unit from the map
+   */
+  removeUnit(unitId: string): void {
+    this.getUnitLayer().removeUnit(unitId);
+  }
+
+  /**
    * Clear unit layer
    */
   clearUnits(): void {
+    if (this.unitLayer) {
+      this.unitLayer.clearUnits();
+    }
     this.unitContainer.removeChildren();
   }
 

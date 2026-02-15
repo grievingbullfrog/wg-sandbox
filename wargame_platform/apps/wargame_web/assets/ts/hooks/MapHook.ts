@@ -30,7 +30,7 @@ export const MapHook = {
       hexSize: parseInt(canvas.dataset.hexSize || "40"),
       showGrid: canvas.dataset.showGrid !== "false",
       showCoords: canvas.dataset.showCoords === "true",
-      showElevation: canvas.dataset.showElevation !== "false",
+      elevationToolActive: canvas.dataset.showElevation === "true",
     };
 
     // Create and initialize renderer

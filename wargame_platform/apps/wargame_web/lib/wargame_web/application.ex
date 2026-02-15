@@ -11,8 +11,9 @@ defmodule WargameWeb.Application do
       WargameWebWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:wargame_web, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: WargameWeb.PubSub},
-      # Start a worker by calling: WargameWeb.Worker.start_link(arg)
-      # {WargameWeb.Worker, arg},
+      # Game runtime: Registry for looking up games by ID, Supervisor for game processes
+      {Registry, keys: :unique, name: WargameCore.Game.Registry},
+      {WargameCore.Game.GameSupervisor, name: WargameCore.Game.GameSupervisor},
       # Start to serve requests, typically the last entry
       WargameWebWeb.Endpoint
     ]

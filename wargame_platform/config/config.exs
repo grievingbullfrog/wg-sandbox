@@ -28,6 +28,9 @@ config :wargame_persistence, WargamePersistence.Repo,
   port: 5433,
   pool_size: 10
 
+config :wargame_core,
+  game_broadcaster: WargameWeb.GameBroadcaster
+
 config :wargame_web,
   generators: [timestamp_type: :utc_datetime]
 
