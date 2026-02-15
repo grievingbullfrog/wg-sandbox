@@ -23,7 +23,7 @@ defmodule WargameCore.Game.GameServer do
 
   alias WargameCore.Scenario.Scenario
   alias WargameCore.Turns.TurnState
-  alias WargameCore.Game.Actions
+  alias WargameCore.Game.{Actions, FogOfWar}
 
   # --- Client API ---
 
@@ -40,10 +40,17 @@ defmodule WargameCore.Game.GameServer do
   end
 
   @doc """
-  Returns the current game state.
+  Returns the current game state (unfiltered).
   """
   def get_state(server) do
     GenServer.call(server, :get_state)
+  end
+
+  @doc """
+  Returns the game state filtered by fog of war for a specific side.
+  """
+  def get_state_for_side(server, side) do
+    GenServer.call(server, {:get_state_for_side, side})
   end
 
   @doc """
@@ -100,6 +107,12 @@ defmodule WargameCore.Game.GameServer do
   @impl true
   def handle_call(:get_state, _from, state) do
     {:reply, state, state}
+  end
+
+  @impl true
+  def handle_call({:get_state_for_side, side}, _from, state) do
+    filtered = FogOfWar.filter_state_for_side(state, side)
+    {:reply, filtered, state}
   end
 
   @impl true

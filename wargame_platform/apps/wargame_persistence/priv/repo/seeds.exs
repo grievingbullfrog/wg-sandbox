@@ -69,3 +69,6 @@ end
 
 # --- WW2 Eastern Front Units & Leaders ---
 Code.require_file("seeds/ww2_eastern_front_units.exs", __DIR__)
+
+# --- Kursk Vignette Scenario ---
+Code.require_file("seeds/kursk_scenario.exs", __DIR__)
