@@ -33,9 +33,10 @@ defmodule WargameCore.Game.GameServer do
   def start_link(opts) do
     scenario = Keyword.fetch!(opts, :scenario)
     game_id = Keyword.get(opts, :game_id, generate_id())
+    ai_players = Keyword.get(opts, :ai_players, %{})
     name = Keyword.get(opts, :name)
 
-    GenServer.start_link(__MODULE__, {scenario, game_id}, name: name)
+    GenServer.start_link(__MODULE__, {scenario, game_id, ai_players}, name: name)
   end
 
   @doc """
@@ -76,9 +77,10 @@ defmodule WargameCore.Game.GameServer do
   # --- Server Callbacks ---
 
   @impl true
-  def init({scenario, game_id}) do
+  def init({scenario, game_id, ai_players}) do
     state = Scenario.initial_game_state(scenario)
     state = Map.put(state, :game_id, game_id)
+    state = Map.put(state, :ai_players, ai_players)
 
     # Run initial phase start
     rules = state.rules_module
@@ -88,6 +90,9 @@ defmodule WargameCore.Game.GameServer do
     else
       state
     end
+
+    # If the starting side is AI-controlled, trigger AI turn
+    state = maybe_execute_ai_turn(state)
 
     {:ok, state}
   end
@@ -128,10 +133,61 @@ defmodule WargameCore.Game.GameServer do
       :ok ->
         new_state = Actions.PhaseManagement.advance_phase(state)
         broadcast(new_state)
+        # Check if the new active side is AI-controlled
+        new_state = maybe_execute_ai_turn(new_state)
         {:reply, {:ok, new_state}, new_state}
 
       {:error, reason} ->
         {:reply, {:error, reason}, state}
+    end
+  end
+
+  # --- AI Turn Execution ---
+
+  defp maybe_execute_ai_turn(state) do
+    if Map.get(state, :status) == :finished do
+      state
+    else
+      active_side = TurnState.active_side(state.turn_state)
+      ai_config = get_in(state, [:ai_players, active_side])
+
+      if ai_config do
+        execute_ai_turn(state, active_side, ai_config)
+      else
+        state
+      end
+    end
+  end
+
+  defp execute_ai_turn(state, side, ai_config) do
+    config = Map.put(ai_config, :side, side)
+    ai_module = Map.get(ai_config, :module, WargameAi.Player)
+    actions = ai_module.play_turn(state, config)
+
+    state = execute_ai_actions(state, side, actions)
+
+    # After AI finishes, check if the next active side is also AI
+    maybe_execute_ai_turn(state)
+  end
+
+  defp execute_ai_actions(state, _side, []), do: state
+
+  defp execute_ai_actions(state, side, [:end_phase | rest]) do
+    new_state = Actions.PhaseManagement.advance_phase(state)
+    broadcast(new_state)
+    execute_ai_actions(new_state, side, rest)
+  end
+
+  defp execute_ai_actions(state, side, [action | rest]) do
+    case execute_action(state, side, action) do
+      {:ok, new_state} ->
+        new_state = log_action(new_state, side, action)
+        broadcast(new_state)
+        execute_ai_actions(new_state, side, rest)
+
+      {:error, _reason} ->
+        # Skip invalid AI actions and continue
+        execute_ai_actions(state, side, rest)
     end
   end
 

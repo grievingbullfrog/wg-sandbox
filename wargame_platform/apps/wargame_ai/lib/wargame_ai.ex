@@ -1,18 +1,8 @@
 defmodule WargameAi do
   @moduledoc """
-  Documentation for `WargameAi`.
+  AI opponent system for the wargame platform.
+
+  Provides configurable AI players that can evaluate board positions,
+  plan movement, and make combat decisions at variable difficulty levels.
   """
-
-  @doc """
-  Hello world.
-
-  ## Examples
-
-      iex> WargameAi.hello()
-      :world
-
-  """
-  def hello do
-    :world
-  end
 end
