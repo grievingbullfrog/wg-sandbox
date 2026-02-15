@@ -3,7 +3,7 @@ defmodule WargamePersistence.Units do
 
   import Ecto.Query
   alias WargamePersistence.Repo
-  alias WargamePersistence.Schemas.{UnitTemplate, Leader}
+  alias WargamePersistence.Schemas.{UnitTemplate, Leader, ScenarioUnit}
 
   # --- Unit Templates ---
 
@@ -36,7 +36,7 @@ defmodule WargamePersistence.Units do
 
   def list_unit_templates_for_scenario(scenario_id) do
     from(t in UnitTemplate,
-      join: su in "scenario_units",
+      join: su in ScenarioUnit,
       on: su.unit_template_id == t.id,
       where: su.scenario_id == ^scenario_id,
       distinct: true,

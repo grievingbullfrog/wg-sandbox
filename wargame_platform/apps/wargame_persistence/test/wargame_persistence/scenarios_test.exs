@@ -63,11 +63,82 @@ defmodule WargamePersistence.ScenariosTest do
     end
   end
 
+  describe "action profile error paths" do
+    test "create_action_profile/1 returns error for missing fields" do
+      assert {:error, changeset} = Scenarios.create_action_profile(%{})
+      refute changeset.valid?
+    end
+  end
+
+  describe "action profile update and delete" do
+    test "update_action_profile/2 updates" do
+      {:ok, profile} =
+        Scenarios.create_action_profile(%{
+          name: "WW2 Standard",
+          era: "ww2",
+          actions: %{"options" => []},
+          phase_sequence: %{"phases" => ["movement"]},
+          rules_module: "Elixir.WargameCore.Rules.StandardRules"
+        })
+
+      assert {:ok, updated} = Scenarios.update_action_profile(profile, %{name: "WW2 Revised"})
+      assert updated.name == "WW2 Revised"
+    end
+
+    test "delete_action_profile/1 deletes" do
+      {:ok, profile} =
+        Scenarios.create_action_profile(%{
+          name: "To Delete",
+          era: "ww2",
+          actions: %{"options" => []},
+          phase_sequence: %{"phases" => []},
+          rules_module: "Elixir.WargameCore.Rules.StandardRules"
+        })
+
+      assert {:ok, _} = Scenarios.delete_action_profile(profile)
+      assert_raise Ecto.NoResultsError, fn -> Scenarios.get_action_profile!(profile.id) end
+    end
+  end
+
   describe "scenario CRUD" do
     test "create_scenario/1 creates a scenario" do
       deps = create_dependencies!()
       assert {:ok, scenario} = Scenarios.create_scenario(scenario_attrs(deps))
       assert scenario.name == "Battle of Kursk"
+    end
+
+    test "create_scenario/1 returns error for missing fields" do
+      assert {:error, changeset} = Scenarios.create_scenario(%{})
+      refute changeset.valid?
+    end
+
+    test "update_scenario/2 updates" do
+      deps = create_dependencies!()
+      {:ok, scenario} = Scenarios.create_scenario(scenario_attrs(deps))
+      assert {:ok, updated} = Scenarios.update_scenario(scenario, %{name: "Kursk Revised"})
+      assert updated.name == "Kursk Revised"
+    end
+
+    test "delete_scenario/1 deletes" do
+      deps = create_dependencies!()
+      {:ok, scenario} = Scenarios.create_scenario(scenario_attrs(deps))
+      assert {:ok, _} = Scenarios.delete_scenario(scenario)
+      assert_raise Ecto.NoResultsError, fn -> Scenarios.get_scenario!(scenario.id) end
+    end
+
+    test "list_scenarios/1 filters by era" do
+      deps = create_dependencies!()
+      {:ok, _} = Scenarios.create_scenario(scenario_attrs(deps))
+      assert length(Scenarios.list_scenarios(era: "ww2")) == 1
+      assert length(Scenarios.list_scenarios(era: "napoleonic")) == 0
+    end
+
+    test "list_scenarios/1 filters by published" do
+      deps = create_dependencies!()
+      {:ok, _} = Scenarios.create_scenario(Map.put(scenario_attrs(deps), :published, true))
+      {:ok, _} = Scenarios.create_scenario(Map.put(scenario_attrs(deps), :name, "Other") |> Map.put(:published, false))
+      assert length(Scenarios.list_scenarios(published: true)) == 1
+      assert length(Scenarios.list_scenarios(published: false)) == 1
     end
 
     test "list_scenarios/0 returns all scenarios" do
@@ -144,6 +215,77 @@ defmodule WargamePersistence.ScenariosTest do
 
       assert {:ok, units} = Scenarios.batch_create_scenario_units(units_attrs)
       assert length(units) == 3
+    end
+
+    test "batch_create_scenario_units/1 rolls back on invalid entry" do
+      deps = create_dependencies!()
+      {:ok, scenario} = Scenarios.create_scenario(scenario_attrs(deps))
+
+      units_attrs = [
+        %{
+          scenario_id: scenario.id,
+          unit_template_id: deps.template.id,
+          side: "axis",
+          force: "german",
+          name: "Good Unit",
+          strength: 10
+        },
+        # Missing required name field
+        %{
+          scenario_id: scenario.id,
+          unit_template_id: deps.template.id,
+          side: "axis",
+          force: "german",
+          name: "",
+          strength: 10
+        }
+      ]
+
+      assert {:error, _changeset} = Scenarios.batch_create_scenario_units(units_attrs)
+      # Transaction rolled back, no units created
+      assert Scenarios.list_scenario_units(scenario.id) == []
+    end
+
+    test "update_scenario_unit/2 updates" do
+      deps = create_dependencies!()
+      {:ok, scenario} = Scenarios.create_scenario(scenario_attrs(deps))
+
+      {:ok, unit} =
+        Scenarios.create_scenario_unit(%{
+          scenario_id: scenario.id,
+          unit_template_id: deps.template.id,
+          side: "axis",
+          force: "german",
+          name: "3rd Panzer",
+          strength: 10
+        })
+
+      assert {:ok, updated} = Scenarios.update_scenario_unit(unit, %{strength: 8, experience: 3})
+      assert updated.strength == 8
+      assert updated.experience == 3
+    end
+
+    test "delete_scenario_unit/1 deletes" do
+      deps = create_dependencies!()
+      {:ok, scenario} = Scenarios.create_scenario(scenario_attrs(deps))
+
+      {:ok, unit} =
+        Scenarios.create_scenario_unit(%{
+          scenario_id: scenario.id,
+          unit_template_id: deps.template.id,
+          side: "axis",
+          force: "german",
+          name: "3rd Panzer",
+          strength: 10
+        })
+
+      assert {:ok, _} = Scenarios.delete_scenario_unit(unit)
+      assert Scenarios.list_scenario_units(scenario.id) == []
+    end
+
+    test "create_scenario_unit/1 returns error for missing fields" do
+      assert {:error, changeset} = Scenarios.create_scenario_unit(%{})
+      refute changeset.valid?
     end
   end
 end

@@ -66,3 +66,6 @@ case Repo.get_by(ActionProfile, name: "WW2 Standard", era: "ww2") do
   existing ->
     IO.puts("WW2 Standard action profile already exists: #{existing.id}")
 end
+
+# --- WW2 Eastern Front Units & Leaders ---
+Code.require_file("seeds/ww2_eastern_front_units.exs", __DIR__)

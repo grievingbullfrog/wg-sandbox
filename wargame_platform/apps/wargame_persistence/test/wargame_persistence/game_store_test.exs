@@ -88,6 +88,23 @@ defmodule WargamePersistence.GameStoreTest do
     end
   end
 
+  describe "game error paths" do
+    test "create_game/1 returns error for missing fields" do
+      assert {:error, changeset} = GameStore.create_game(%{})
+      refute changeset.valid?
+    end
+
+    test "get_game/1 returns nil for missing id" do
+      assert GameStore.get_game(Ecto.UUID.generate()) == nil
+    end
+
+    test "get_game!/1 raises for missing id" do
+      assert_raise Ecto.NoResultsError, fn ->
+        GameStore.get_game!(Ecto.UUID.generate())
+      end
+    end
+  end
+
   describe "action log" do
     test "log_action/2 and get_action_log/1" do
       game = create_game!()
@@ -113,6 +130,45 @@ defmodule WargamePersistence.GameStoreTest do
       log = GameStore.get_action_log(game.id)
       assert length(log) == 2
       assert hd(log).sequence == 0
+    end
+
+    test "get_action_log/1 returns empty list for no actions" do
+      game = create_game!()
+      assert GameStore.get_action_log(game.id) == []
+    end
+
+    test "get_action_log/1 orders by turn then sequence" do
+      game = create_game!()
+
+      # Insert out of order
+      {:ok, _} =
+        GameStore.log_action(game.id, %{
+          turn: 2, phase: "movement", side: "axis", sequence: 0,
+          action: %{"type" => "move"}
+        })
+
+      {:ok, _} =
+        GameStore.log_action(game.id, %{
+          turn: 1, phase: "combat", side: "axis", sequence: 1,
+          action: %{"type" => "attack"}
+        })
+
+      {:ok, _} =
+        GameStore.log_action(game.id, %{
+          turn: 1, phase: "movement", side: "axis", sequence: 0,
+          action: %{"type" => "move"}
+        })
+
+      log = GameStore.get_action_log(game.id)
+      assert length(log) == 3
+      turns_and_seqs = Enum.map(log, &{&1.turn, &1.sequence})
+      assert turns_and_seqs == [{1, 0}, {1, 1}, {2, 0}]
+    end
+
+    test "log_action/2 returns error for missing fields" do
+      game = create_game!()
+      assert {:error, changeset} = GameStore.log_action(game.id, %{})
+      refute changeset.valid?
     end
   end
 end

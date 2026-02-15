@@ -540,4 +540,478 @@ defmodule WargameCore.Rules.StandardRulesTest do
       assert {:victory, :german, _reason} = StandardRules.check_victory(state)
     end
   end
+
+  # =========================================================================
+  # Unit System Integration Tests
+  # =========================================================================
+  # Tests below use UnitInstance structs from the new unit system
+
+  alias WargameCore.Units.{UnitInstance, UnitTemplate, Leader}
+
+  @infantry_template UnitTemplate.new(%{
+                       id: "rifle-platoon",
+                       name: "Rifle Platoon",
+                       nationality: "soviet",
+                       era: "ww2",
+                       category: :infantry,
+                       unit_size: :platoon,
+                       attack_soft: 5,
+                       attack_hard: 1,
+                       defense: 4,
+                       armor: 0,
+                       movement_points: 4,
+                       movement_type: :foot,
+                       max_strength: 10,
+                       can_entrench: true
+                     })
+
+  @panzer_template UnitTemplate.new(%{
+                     id: "panzer-iv",
+                     name: "Panzer IV",
+                     nationality: "german",
+                     era: "ww2",
+                     category: :armor,
+                     unit_size: :platoon,
+                     attack_soft: 6,
+                     attack_hard: 12,
+                     defense: 10,
+                     armor: 5,
+                     movement_points: 8,
+                     movement_type: :tracked,
+                     range: 1,
+                     max_strength: 10,
+                     can_entrench: false
+                   })
+
+  @german_infantry_template UnitTemplate.new(%{
+                              id: "german-infantry",
+                              name: "Infantry Platoon",
+                              nationality: "german",
+                              era: "ww2",
+                              category: :infantry,
+                              unit_size: :platoon,
+                              attack_soft: 6,
+                              attack_hard: 1,
+                              defense: 5,
+                              armor: 0,
+                              movement_points: 4,
+                              movement_type: :foot,
+                              max_strength: 10,
+                              can_entrench: true
+                            })
+
+  defp create_unit_instance(template, opts) do
+    UnitInstance.new(template, Map.new(opts))
+  end
+
+  describe "combat with UnitInstance: infantry vs infantry" do
+    test "uses attack_soft against unarmored defenders" do
+      attacker =
+        create_unit_instance(@german_infantry_template,
+          id: "att-inf",
+          name: "German Infantry",
+          side: :german,
+          force: :german,
+          position: Coord.new(0, 0)
+        )
+
+      defender =
+        create_unit_instance(@infantry_template,
+          id: "def-inf",
+          name: "Soviet Infantry",
+          side: :soviet,
+          force: :soviet,
+          position: Coord.new(1, 0)
+        )
+
+      units = %{attacker.id => attacker, defender.id => defender}
+
+      phases = [
+        Phase.new(:combat, "Combat", 0, allows_combat: true),
+        Phase.new(:end, "End", 1)
+      ]
+
+      state = create_game_state(units: units, phases: phases)
+
+      assert {:ok, odds} =
+               StandardRules.calculate_combat_odds(state, [attacker.id], Coord.new(1, 0))
+
+      # German infantry: attack_soft=6 vs Soviet infantry: defense=4
+      assert odds.attack_strength == 6
+      assert odds.defense_strength == 4
+      assert odds.combined_arms == 0
+    end
+  end
+
+  describe "combat with UnitInstance: armor vs armor" do
+    test "uses attack_hard against armored defenders" do
+      attacker =
+        create_unit_instance(@panzer_template,
+          id: "att-pz",
+          name: "3rd Panzer",
+          side: :german,
+          force: :german,
+          position: Coord.new(0, 0)
+        )
+
+      defender_template =
+        UnitTemplate.new(%{
+          id: "t34",
+          name: "T-34/76",
+          nationality: "soviet",
+          era: "ww2",
+          category: :armor,
+          unit_size: :platoon,
+          attack_soft: 6,
+          attack_hard: 10,
+          defense: 8,
+          armor: 5,
+          movement_points: 8,
+          movement_type: :tracked,
+          max_strength: 10
+        })
+
+      defender =
+        create_unit_instance(defender_template,
+          id: "def-t34",
+          name: "1st T-34 Btn",
+          side: :soviet,
+          force: :soviet,
+          position: Coord.new(1, 0)
+        )
+
+      units = %{attacker.id => attacker, defender.id => defender}
+
+      phases = [
+        Phase.new(:combat, "Combat", 0, allows_combat: true),
+        Phase.new(:end, "End", 1)
+      ]
+
+      state = create_game_state(units: units, phases: phases)
+
+      assert {:ok, odds} =
+               StandardRules.calculate_combat_odds(state, [attacker.id], Coord.new(1, 0))
+
+      # Panzer IV attack_hard=12 vs T-34 defense=8 (T-34 has armor, so hard attack used)
+      assert odds.attack_strength == 12
+      assert odds.defense_strength == 8
+    end
+  end
+
+  describe "combined arms attack" do
+    test "infantry + armor together get combined arms bonus" do
+      infantry =
+        create_unit_instance(@german_infantry_template,
+          id: "att-inf",
+          name: "German Infantry",
+          side: :german,
+          force: :german,
+          position: Coord.new(0, 0)
+        )
+
+      panzer =
+        create_unit_instance(@panzer_template,
+          id: "att-pz",
+          name: "3rd Panzer",
+          side: :german,
+          force: :german,
+          position: Coord.new(0, 1)
+        )
+
+      defender =
+        create_unit_instance(@infantry_template,
+          id: "def-inf",
+          name: "Soviet Infantry",
+          side: :soviet,
+          force: :soviet,
+          position: Coord.new(1, 0)
+        )
+
+      units = %{infantry.id => infantry, panzer.id => panzer, defender.id => defender}
+
+      phases = [
+        Phase.new(:combat, "Combat", 0, allows_combat: true),
+        Phase.new(:end, "End", 1)
+      ]
+
+      state = create_game_state(units: units, phases: phases)
+
+      assert {:ok, odds} =
+               StandardRules.calculate_combat_odds(
+                 state,
+                 [infantry.id, panzer.id],
+                 Coord.new(1, 0)
+               )
+
+      # Defender is soft target: infantry soft=6 + panzer soft=6 + combined_arms=2 = 14
+      assert odds.combined_arms == 2
+      assert odds.attack_strength == 6 + 6 + 2
+    end
+  end
+
+  describe "leader modifiers in combat" do
+    test "leader in range adds attack bonus" do
+      leader =
+        Leader.new(%{
+          id: "guderian",
+          name: "Guderian",
+          nationality: "german",
+          era: "ww2",
+          rank: :general,
+          command_radius: 4,
+          attack_modifier: 2,
+          defense_modifier: 1,
+          side: :german,
+          force: :german,
+          position: Coord.new(0, 0)
+        })
+
+      attacker =
+        create_unit_instance(@panzer_template,
+          id: "att-pz",
+          name: "3rd Panzer",
+          side: :german,
+          force: :german,
+          position: Coord.new(1, 0)
+        )
+
+      defender =
+        create_unit_instance(@infantry_template,
+          id: "def-inf",
+          name: "Soviet Infantry",
+          side: :soviet,
+          force: :soviet,
+          position: Coord.new(2, 0)
+        )
+
+      units = %{attacker.id => attacker, defender.id => defender}
+
+      phases = [
+        Phase.new(:combat, "Combat", 0, allows_combat: true),
+        Phase.new(:end, "End", 1)
+      ]
+
+      state =
+        create_game_state(units: units, phases: phases)
+        |> Map.put(:leaders, %{leader.id => leader})
+
+      assert {:ok, odds} =
+               StandardRules.calculate_combat_odds(state, [attacker.id], Coord.new(2, 0))
+
+      # Panzer soft=6 + leader attack bonus=2 = 8
+      assert odds.leader_attack_bonus == 2
+      assert odds.attack_strength == 6 + 2
+    end
+
+    test "leader out of range provides no bonus" do
+      leader =
+        Leader.new(%{
+          id: "guderian",
+          name: "Guderian",
+          nationality: "german",
+          era: "ww2",
+          rank: :general,
+          command_radius: 1,
+          attack_modifier: 2,
+          defense_modifier: 1,
+          side: :german,
+          force: :german,
+          position: Coord.new(5, 5)
+        })
+
+      attacker =
+        create_unit_instance(@panzer_template,
+          id: "att-pz",
+          name: "3rd Panzer",
+          side: :german,
+          force: :german,
+          position: Coord.new(0, 0)
+        )
+
+      defender =
+        create_unit_instance(@infantry_template,
+          id: "def-inf",
+          name: "Soviet Infantry",
+          side: :soviet,
+          force: :soviet,
+          position: Coord.new(1, 0)
+        )
+
+      units = %{attacker.id => attacker, defender.id => defender}
+
+      phases = [
+        Phase.new(:combat, "Combat", 0, allows_combat: true),
+        Phase.new(:end, "End", 1)
+      ]
+
+      state =
+        create_game_state(units: units, phases: phases)
+        |> Map.put(:leaders, %{leader.id => leader})
+
+      assert {:ok, odds} =
+               StandardRules.calculate_combat_odds(state, [attacker.id], Coord.new(1, 0))
+
+      assert odds.leader_attack_bonus == 0
+    end
+  end
+
+  describe "terrain defense bonus with UnitInstance" do
+    test "forest adds defense to UnitInstance defenders" do
+      attacker =
+        create_unit_instance(@panzer_template,
+          id: "att-pz",
+          name: "3rd Panzer",
+          side: :german,
+          force: :german,
+          position: Coord.new(0, 0)
+        )
+
+      defender =
+        create_unit_instance(@infantry_template,
+          id: "def-inf",
+          name: "Soviet Infantry",
+          side: :soviet,
+          force: :soviet,
+          position: Coord.new(1, 0)
+        )
+
+      units = %{attacker.id => attacker, defender.id => defender}
+
+      phases = [
+        Phase.new(:combat, "Combat", 0, allows_combat: true),
+        Phase.new(:end, "End", 1)
+      ]
+
+      state = create_game_state(units: units, phases: phases)
+
+      # Set forest terrain at defender position
+      {:ok, map} = GameMap.set_terrain(state.map, Coord.new(1, 0), :forest_pine)
+      state = %{state | map: map}
+
+      assert {:ok, odds} =
+               StandardRules.calculate_combat_odds(state, [attacker.id], Coord.new(1, 0))
+
+      assert odds.terrain_modifier == 2
+      assert odds.modified_defense == 4 + 2
+    end
+  end
+
+  describe "strength-scaled effectiveness" do
+    test "half-strength UnitInstance has reduced attack" do
+      attacker =
+        create_unit_instance(@panzer_template,
+          id: "att-pz",
+          name: "Battered Panzer",
+          side: :german,
+          force: :german,
+          position: Coord.new(0, 0),
+          current_strength: 5
+        )
+
+      defender =
+        create_unit_instance(@infantry_template,
+          id: "def-inf",
+          name: "Soviet Infantry",
+          side: :soviet,
+          force: :soviet,
+          position: Coord.new(1, 0)
+        )
+
+      units = %{attacker.id => attacker, defender.id => defender}
+
+      phases = [
+        Phase.new(:combat, "Combat", 0, allows_combat: true),
+        Phase.new(:end, "End", 1)
+      ]
+
+      state = create_game_state(units: units, phases: phases)
+
+      assert {:ok, odds} =
+               StandardRules.calculate_combat_odds(state, [attacker.id], Coord.new(1, 0))
+
+      # Panzer at half strength: soft attack = 6 * 0.5 = 3
+      assert odds.attack_strength == 3
+    end
+  end
+
+  describe "movement with UnitInstance" do
+    test "armor movement cost differs from infantry on forest terrain" do
+      tank =
+        create_unit_instance(@panzer_template,
+          id: "pz",
+          name: "Panzer",
+          side: :german,
+          force: :german,
+          position: Coord.new(0, 0)
+        )
+
+      infantry =
+        create_unit_instance(@infantry_template,
+          id: "inf",
+          name: "Infantry",
+          side: :german,
+          force: :german,
+          position: Coord.new(0, 0)
+        )
+
+      state_tank = create_game_state(units: %{tank.id => tank})
+      state_inf = create_game_state(units: %{infantry.id => infantry})
+
+      # Set forest terrain
+      {:ok, map} = GameMap.set_terrain(state_tank.map, Coord.new(1, 0), :forest_pine)
+      state_tank = %{state_tank | map: map}
+
+      {:ok, map2} = GameMap.set_terrain(state_inf.map, Coord.new(1, 0), :forest_pine)
+      state_inf = %{state_inf | map: map2}
+
+      tank_cost = StandardRules.movement_cost(state_tank, tank.id, Coord.new(1, 0), Coord.new(0, 0))
+      inf_cost = StandardRules.movement_cost(state_inf, infantry.id, Coord.new(1, 0), Coord.new(0, 0))
+
+      # Forest: armor=3, infantry=2
+      assert tank_cost == 3
+      assert inf_cost == 2
+    end
+  end
+
+  describe "on_turn_start with UnitInstance" do
+    test "resets UnitInstance turn state properly" do
+      unit =
+        create_unit_instance(@panzer_template,
+          id: "pz",
+          name: "Panzer",
+          side: :german,
+          force: :german,
+          position: Coord.new(0, 0)
+        )
+
+      spent = %{unit | movement_remaining: 0, has_attacked: true, has_moved: true}
+      state = create_game_state(units: %{spent.id => spent})
+
+      new_state = StandardRules.on_turn_start(state, 2)
+
+      reset = new_state.units[spent.id]
+      assert reset.movement_remaining == 8
+      refute reset.has_attacked
+      refute reset.has_moved
+    end
+
+    test "disrupted UnitInstance gets half movement on reset" do
+      unit =
+        create_unit_instance(@panzer_template,
+          id: "pz",
+          name: "Panzer",
+          side: :german,
+          force: :german,
+          position: Coord.new(0, 0)
+        )
+
+      disrupted = %{unit | is_disrupted: true, movement_remaining: 0}
+      state = create_game_state(units: %{disrupted.id => disrupted})
+
+      new_state = StandardRules.on_turn_start(state, 2)
+      reset = new_state.units[disrupted.id]
+      # Disrupted gets half movement: 8 / 2 = 4
+      assert reset.movement_remaining == 4
+    end
+  end
 end

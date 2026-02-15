@@ -18,9 +18,13 @@ defmodule WargameCore.Rules.StandardRules do
   alias WargameCore.Hex.Coord
   alias WargameCore.Map.Tile
   alias WargameCore.Turns.TurnState
+  alias WargameCore.Units.{UnitInstance, UnitTemplate}
 
   # Default stacking limit (units per hex)
   @default_stacking_limit 3
+
+  # Combined arms bonus when both infantry and armor categories attack together
+  @combined_arms_bonus 2
 
   @impl true
   def validate_movement(game_state, unit_id, path) do
@@ -141,7 +145,8 @@ defmodule WargameCore.Rules.StandardRules do
           direction =
             if from_coord, do: Coord.direction_to(from_coord, to_coord), else: nil
 
-          Tile.movement_cost(tile, unit.category, direction)
+          category = unit_category(unit)
+          Tile.movement_cost(tile, category, direction)
         else
           :impassable
         end
@@ -155,17 +160,31 @@ defmodule WargameCore.Rules.StandardRules do
   def calculate_combat_odds(game_state, attacker_ids, target_coord) do
     with {:ok, attackers} <- get_units(game_state, attacker_ids),
          {:ok, defenders} <- get_units_at(game_state, target_coord) do
-      # Sum attack strengths
-      attack_strength =
+      # Determine if defenders are hard targets (have armor)
+      defenders_are_hard = Enum.any?(defenders, &is_hard_target?/1)
+
+      # Sum attack strengths (soft or hard based on defender type)
+      base_attack_strength =
         Enum.reduce(attackers, 0, fn unit, acc ->
-          acc + get_attack_strength(unit)
+          acc + get_attack_strength(unit, defenders_are_hard)
         end)
 
+      # Combined arms bonus: infantry + armor attacking together
+      combined_arms = combined_arms_bonus(attackers)
+
+      # Leader modifier bonus
+      leader_attack_bonus = leader_bonus(game_state, attackers, :attack)
+
+      attack_strength = base_attack_strength + combined_arms + leader_attack_bonus
+
       # Sum defense strengths
-      defense_strength =
+      base_defense_strength =
         Enum.reduce(defenders, 0, fn unit, acc ->
           acc + get_defense_strength(unit)
         end)
+
+      leader_defense_bonus = leader_bonus(game_state, defenders, :defense)
+      defense_strength = base_defense_strength + leader_defense_bonus
 
       # Get terrain modifier
       target_tile = WargameCore.Map.get_tile(game_state.map, target_coord)
@@ -187,7 +206,10 @@ defmodule WargameCore.Rules.StandardRules do
          terrain_modifier: terrain_modifier,
          modified_defense: modified_defense,
          raw_odds: raw_odds,
-         final_odds: final_odds
+         final_odds: final_odds,
+         combined_arms: combined_arms,
+         leader_attack_bonus: leader_attack_bonus,
+         leader_defense_bonus: leader_defense_bonus
        }}
     end
   end
@@ -231,7 +253,7 @@ defmodule WargameCore.Rules.StandardRules do
     units =
       game_state.units
       |> Map.new(fn {id, unit} ->
-        {id, %{unit | movement_remaining: unit.movement_points, has_attacked: false}}
+        {id, reset_unit_turn(unit)}
       end)
 
     %{game_state | units: units}
@@ -439,8 +461,79 @@ defmodule WargameCore.Rules.StandardRules do
     end
   end
 
-  defp get_attack_strength(unit), do: Map.get(unit, :attack, 1)
+  # Attack strength: for UnitInstance, use soft/hard based on defender armor
+  defp get_attack_strength(%UnitInstance{} = unit, true = _defenders_are_hard) do
+    UnitInstance.effective_attack_hard(unit) + UnitInstance.attachment_bonus(unit, :attack_hard)
+  end
+
+  defp get_attack_strength(%UnitInstance{} = unit, false = _defenders_are_hard) do
+    UnitInstance.effective_attack_soft(unit) + UnitInstance.attachment_bonus(unit, :attack_soft)
+  end
+
+  # Plain map fallback for backward compatibility
+  defp get_attack_strength(unit, _defenders_are_hard), do: Map.get(unit, :attack, 1)
+
+  # Defense strength: for UnitInstance, use effective_defense
+  defp get_defense_strength(%UnitInstance{} = unit) do
+    UnitInstance.effective_defense(unit) + UnitInstance.attachment_bonus(unit, :defense)
+  end
+
   defp get_defense_strength(unit), do: Map.get(unit, :defense, 1)
+
+  # Check if a unit is a hard target (has armor)
+  defp is_hard_target?(%UnitInstance{template: template}), do: UnitTemplate.is_hard_target?(template)
+  defp is_hard_target?(unit), do: Map.get(unit, :armor, 0) > 0
+
+  # Extract unit category for terrain movement costs
+  defp unit_category(%UnitInstance{template: template}), do: UnitTemplate.terrain_category(template)
+  defp unit_category(unit), do: Map.get(unit, :category, :infantry)
+
+  # Combined arms: bonus when both infantry-type and armor-type categories attack
+  defp combined_arms_bonus(attackers) do
+    categories = Enum.map(attackers, fn
+      %UnitInstance{template: t} -> t.category
+      unit -> Map.get(unit, :category, :infantry)
+    end) |> Enum.uniq()
+
+    has_infantry = Enum.any?(categories, &(&1 in [:infantry, :motorized, :engineer]))
+    has_armor = Enum.any?(categories, &(&1 in [:armor]))
+
+    if has_infantry and has_armor, do: @combined_arms_bonus, else: 0
+  end
+
+  # Leader modifier bonus: sum leader attack/defense bonuses for units with leaders in range
+  defp leader_bonus(game_state, units, stat_type) do
+    leaders = Map.get(game_state, :leaders, %{}) |> Map.values()
+
+    if Enum.empty?(leaders) do
+      0
+    else
+      Enum.reduce(units, 0, fn unit, acc ->
+        pos = unit.position
+
+        best_leader_bonus =
+          leaders
+          |> Enum.filter(fn leader -> leader.side == unit.side end)
+          |> Enum.map(fn leader ->
+            if WargameCore.Units.Leader.in_command_radius?(leader, pos) do
+              case stat_type do
+                :attack -> leader.attack_modifier
+                :defense -> leader.defense_modifier
+              end
+            else
+              0
+            end
+          end)
+          |> Enum.max(fn -> 0 end)
+
+        acc + best_leader_bonus
+      end)
+    end
+  end
+
+  # Reset unit turn state - handles both UnitInstance and plain maps
+  defp reset_unit_turn(%UnitInstance{} = unit), do: UnitInstance.reset_turn_state(unit)
+  defp reset_unit_turn(unit), do: %{unit | movement_remaining: unit.movement_points, has_attacked: false}
 
   defp round_to_odds_column(raw_odds) do
     # Standard CRT odds columns

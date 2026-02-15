@@ -64,6 +64,104 @@ defmodule WargamePersistence.UnitsTest do
     end
   end
 
+  describe "unit template error paths" do
+    test "create_unit_template/1 returns error for missing fields" do
+      assert {:error, changeset} = Units.create_unit_template(%{})
+      refute changeset.valid?
+    end
+
+    test "create_unit_template/1 returns error for invalid category" do
+      assert {:error, changeset} =
+               Units.create_unit_template(%{@template_attrs | category: "invalid"})
+
+      refute changeset.valid?
+    end
+  end
+
+  describe "list_unit_templates_for_scenario/1" do
+    test "returns templates used by a scenario" do
+      {:ok, template1} = Units.create_unit_template(@template_attrs)
+
+      {:ok, template2} =
+        Units.create_unit_template(%{
+          @template_attrs
+          | name: "Rifle Platoon",
+            nationality: "soviet",
+            category: "infantry"
+        })
+
+      {:ok, _unused} =
+        Units.create_unit_template(%{@template_attrs | name: "Tiger I"})
+
+      {:ok, map} =
+        WargamePersistence.Maps.create_map(%{name: "Test Map", width: 10, height: 10})
+
+      {:ok, profile} =
+        WargamePersistence.Scenarios.create_action_profile(%{
+          name: "WW2",
+          era: "ww2",
+          actions: %{"options" => []},
+          phase_sequence: %{"phases" => ["movement"]},
+          rules_module: "Elixir.WargameCore.Rules.StandardRules"
+        })
+
+      {:ok, scenario} =
+        WargamePersistence.Scenarios.create_scenario(%{
+          name: "Test",
+          era: "ww2",
+          max_turns: 10,
+          first_move: "axis",
+          map_id: map.id,
+          action_profile_id: profile.id,
+          sides: %{"sides" => []},
+          victory_conditions: %{"type" => "victory_points"}
+        })
+
+      {:ok, _} =
+        WargamePersistence.Scenarios.create_scenario_unit(%{
+          scenario_id: scenario.id,
+          unit_template_id: template1.id,
+          side: "axis",
+          force: "german",
+          name: "Unit A",
+          strength: 10
+        })
+
+      {:ok, _} =
+        WargamePersistence.Scenarios.create_scenario_unit(%{
+          scenario_id: scenario.id,
+          unit_template_id: template2.id,
+          side: "allied",
+          force: "soviet",
+          name: "Unit B",
+          strength: 10
+        })
+
+      templates = Units.list_unit_templates_for_scenario(scenario.id)
+      assert length(templates) == 2
+      names = Enum.map(templates, & &1.name) |> Enum.sort()
+      assert names == ["Panzer IV", "Rifle Platoon"]
+    end
+
+    test "returns empty list for scenario with no units" do
+      assert Units.list_unit_templates_for_scenario(Ecto.UUID.generate()) == []
+    end
+  end
+
+  describe "leader error paths" do
+    test "create_leader/1 returns error for missing fields" do
+      assert {:error, changeset} = Units.create_leader(%{})
+      refute changeset.valid?
+    end
+
+    test "create_leader/1 returns error for invalid rank" do
+      assert {:error, changeset} =
+               Units.create_leader(%{@leader_attrs | rank: "invalid"})
+
+      refute changeset.valid?
+    end
+  end
+
   describe "leader CRUD" do
     test "create_leader/1 creates a leader" do
       assert {:ok, leader} = Units.create_leader(@leader_attrs)
