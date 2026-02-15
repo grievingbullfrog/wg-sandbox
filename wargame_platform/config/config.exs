@@ -23,9 +23,9 @@ config :wargame_persistence,
 config :wargame_persistence, WargamePersistence.Repo,
   database: "wargame_platform_dev",
   username: "postgres",
-  password: "postgres",
+  password: "docker",
   hostname: "localhost",
-  port: 5432,
+  port: 5433,
   pool_size: 10
 
 config :wargame_web,
