@@ -84,8 +84,10 @@ defmodule WargameCore.Rules.StandardRules do
 
   @impl true
   def check_victory(game_state) do
+    sides = Map.get(game_state, :sides, game_state.turn_state.sides)
+
     scores =
-      Enum.reduce(game_state.sides, %{}, fn side, acc ->
+      Enum.reduce(sides, %{}, fn side, acc ->
         vp = WargameCore.Map.victory_points_for(game_state.map, side)
         Map.put(acc, side, vp)
       end)
