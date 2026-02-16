@@ -160,8 +160,8 @@ if Enum.empty?(all_german) or Enum.empty?(all_soviet) do
 else
   # --- 4. Look up leaders ---
 
-  ger_leader = Repo.get_by(Leader, nationality: "german")
-  sov_leader = Repo.get_by(Leader, nationality: "soviet")
+  ger_leader = Repo.get_by(Leader, name: "Erich von Manstein", nationality: "german")
+  sov_leader = Repo.get_by(Leader, name: "Nikolai Vatutin", nationality: "soviet")
 
   # --- 5. Create the scenario ---
 

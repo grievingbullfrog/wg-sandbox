@@ -18,12 +18,13 @@ defmodule WargamePersistence.Schemas.Leader do
 
     belongs_to :replacement_leader, __MODULE__
     belongs_to :author, WargamePersistence.Schemas.User
+    belongs_to :game_product, WargamePersistence.Schemas.GameProduct
 
     timestamps()
   end
 
   @required_fields [:name, :nationality, :era, :rank, :command_radius, :modifiers]
-  @optional_fields [:is_historical, :replacement_leader_id, :author_id]
+  @optional_fields [:is_historical, :replacement_leader_id, :author_id, :game_product_id]
 
   def changeset(leader, attrs) do
     leader
@@ -34,6 +35,7 @@ defmodule WargamePersistence.Schemas.Leader do
     |> validate_number(:command_radius, greater_than: 0, less_than_or_equal_to: 6)
     |> foreign_key_constraint(:replacement_leader_id)
     |> foreign_key_constraint(:author_id)
+    |> foreign_key_constraint(:game_product_id)
   end
 
   def create_changeset(leader, attrs) do

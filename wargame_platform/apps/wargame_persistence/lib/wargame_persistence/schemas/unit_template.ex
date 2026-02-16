@@ -19,12 +19,13 @@ defmodule WargamePersistence.Schemas.UnitTemplate do
     field :published, :boolean, default: false
 
     belongs_to :author, WargamePersistence.Schemas.User
+    belongs_to :game_product, WargamePersistence.Schemas.GameProduct
 
     timestamps()
   end
 
   @required_fields [:name, :nationality, :era, :category, :unit_size, :stats]
-  @optional_fields [:icon_type, :author_id, :published]
+  @optional_fields [:icon_type, :author_id, :published, :game_product_id]
 
   def changeset(template, attrs) do
     template
@@ -34,6 +35,7 @@ defmodule WargamePersistence.Schemas.UnitTemplate do
     |> validate_inclusion(:category, @valid_categories)
     |> validate_inclusion(:unit_size, @valid_unit_sizes)
     |> foreign_key_constraint(:author_id)
+    |> foreign_key_constraint(:game_product_id)
   end
 
   def create_changeset(template, attrs) do

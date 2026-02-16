@@ -9,24 +9,34 @@ defmodule WargameWebWeb.GameSetupLive do
   use WargameWebWeb, :live_view
 
   alias WargameCore.Game.GameSupervisor
-  alias WargameCore.Scenario.{Scenario, ActionProfile}
+  alias WargameCore.Scenario.{Scenario, ActionProfile, ScenarioLoader}
   alias WargameCore.Units.UnitTemplate
   alias WargameCore.Hex.Coord
   alias WargameCore.Map, as: GameMap
   alias WargameCore.Map.Tile
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(params, _session, socket) do
     # Load available scenarios from DB
     scenarios = WargamePersistence.Scenarios.list_scenarios()
+
+    # Pre-select scenario if specified via query param
+    selected =
+      case params["scenario_id"] do
+        nil -> nil
+        id -> Enum.find(scenarios, &(&1.id == id))
+      end
+
+    product_slug = params["product_slug"]
 
     socket =
       socket
       |> assign(:scenarios, scenarios)
-      |> assign(:selected_scenario, nil)
+      |> assign(:selected_scenario, selected)
       |> assign(:player_side, :axis)
       |> assign(:fog_of_war, false)
       |> assign(:quick_start, false)
+      |> assign(:product_slug, product_slug)
 
     {:ok, socket}
   end
@@ -129,8 +139,11 @@ defmodule WargameWebWeb.GameSetupLive do
 
         <%!-- Back Link --%>
         <div class="mt-8 text-center">
-          <.link navigate={~p"/"} class="text-gray-400 hover:text-white text-sm">
-            Back to Home
+          <.link :if={@product_slug} navigate={~p"/products/#{@product_slug}"} class="text-gray-400 hover:text-white text-sm">
+            &larr; Back to Scenarios
+          </.link>
+          <.link :if={!@product_slug} navigate={~p"/"} class="text-gray-400 hover:text-white text-sm">
+            &larr; Back to Home
           </.link>
         </div>
       </div>
@@ -153,8 +166,23 @@ defmodule WargameWebWeb.GameSetupLive do
   end
 
   def handle_event("start_game", _params, socket) do
-    # TODO: Convert DB scenario to core scenario and start game
-    {:noreply, put_flash(socket, :info, "DB scenario launch coming soon")}
+    db_scenario = socket.assigns.selected_scenario
+
+    case WargamePersistence.Scenarios.load_full_scenario(db_scenario.id) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "Scenario not found")}
+
+      full_scenario ->
+        core_scenario = ScenarioLoader.from_db_scenario(full_scenario)
+
+        case GameSupervisor.start_game(core_scenario) do
+          {:ok, _pid, game_id} ->
+            {:noreply, push_navigate(socket, to: ~p"/game/#{game_id}")}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Failed to start: #{inspect(reason)}")}
+        end
+    end
   end
 
   def handle_event("quick_start", _params, socket) do

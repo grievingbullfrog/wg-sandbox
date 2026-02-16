@@ -1,8 +1,10 @@
-defmodule WargameWebWeb.PageControllerTest do
-  use WargameWebWeb.ConnCase
+defmodule WargameWebWeb.HomeLiveTest do
+  use WargameWebWeb.ConnCase, async: true
 
-  test "GET /", %{conn: conn} do
-    conn = get(conn, ~p"/")
-    assert html_response(conn, 200) =~ "Wargame Platform"
+  import Phoenix.LiveViewTest
+
+  test "GET / renders the landing page", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/")
+    assert html =~ "Wargame Platform"
   end
 end

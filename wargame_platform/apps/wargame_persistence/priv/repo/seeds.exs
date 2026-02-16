@@ -72,3 +72,6 @@ Code.require_file("seeds/ww2_eastern_front_units.exs", __DIR__)
 
 # --- Kursk Vignette Scenario ---
 Code.require_file("seeds/kursk_scenario.exs", __DIR__)
+
+# --- East Front 1941 Game Product (10 scenarios) ---
+Code.require_file("seeds/east_front_1941_product.exs", __DIR__)

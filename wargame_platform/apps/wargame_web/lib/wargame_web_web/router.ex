@@ -17,17 +17,22 @@ defmodule WargameWebWeb.Router do
   scope "/", WargameWebWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    live "/", HomeLive
+    live "/products/:slug", ProductLive
+    live "/my-games", GameListLive
+
+    # Game routes
+    live "/game/:id", GameLive
+    live "/game/:id/replay", ReplayLive
+    live "/games/new", GameSetupLive
+
+    # Design tools
     live "/map-demo", MapDemoLive
     live "/map-editor", MapEditorLive
-    live "/game/:id", GameLive
-    live "/games/new", GameSetupLive
-    live "/games", GameListLive
     live "/unit-editor", UnitEditorLive
     live "/leader-editor", LeaderEditorLive
     live "/scenario-editor", ScenarioEditorLive
     live "/scenario-editor/:id", ScenarioEditorLive
-    live "/game/:id/replay", ReplayLive
   end
 
   # Tile proxy for satellite imagery (bypasses CORS)

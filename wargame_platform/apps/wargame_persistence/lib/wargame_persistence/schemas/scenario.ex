@@ -26,6 +26,7 @@ defmodule WargamePersistence.Schemas.Scenario do
     belongs_to :author, WargamePersistence.Schemas.User
     belongs_to :map, WargamePersistence.Schemas.Map
     belongs_to :action_profile, WargamePersistence.Schemas.ActionProfile
+    belongs_to :game_product, WargamePersistence.Schemas.GameProduct
 
     has_many :scenario_units, WargamePersistence.Schemas.ScenarioUnit
     has_many :games, WargamePersistence.Schemas.Game
@@ -37,7 +38,7 @@ defmodule WargamePersistence.Schemas.Scenario do
   @optional_fields [
     :description, :date_start, :date_per_turn,
     :weather_schedule, :supply_sources, :reinforcement_mode,
-    :special_rules, :author_id, :published
+    :special_rules, :author_id, :published, :game_product_id
   ]
 
   def changeset(scenario, attrs) do
@@ -50,6 +51,7 @@ defmodule WargamePersistence.Schemas.Scenario do
     |> foreign_key_constraint(:map_id)
     |> foreign_key_constraint(:action_profile_id)
     |> foreign_key_constraint(:author_id)
+    |> foreign_key_constraint(:game_product_id)
   end
 
   def create_changeset(scenario, attrs) do

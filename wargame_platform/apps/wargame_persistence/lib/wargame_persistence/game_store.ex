@@ -10,6 +10,7 @@ defmodule WargamePersistence.GameStore do
   def list_games(opts \\ []) do
     Game
     |> maybe_filter_status(opts[:status])
+    |> maybe_preload(opts[:preload])
     |> order_by([g], desc: g.updated_at)
     |> Repo.all()
   end
@@ -76,4 +77,7 @@ defmodule WargamePersistence.GameStore do
 
   defp maybe_filter_status(query, nil), do: query
   defp maybe_filter_status(query, status), do: where(query, [g], g.status == ^status)
+
+  defp maybe_preload(query, nil), do: query
+  defp maybe_preload(query, preloads), do: preload(query, ^preloads)
 end

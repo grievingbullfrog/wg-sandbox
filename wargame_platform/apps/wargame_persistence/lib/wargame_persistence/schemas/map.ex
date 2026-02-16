@@ -21,6 +21,7 @@ defmodule WargamePersistence.Schemas.Map do
     field :published, :boolean, default: false
 
     belongs_to :author, WargamePersistence.Schemas.User
+    belongs_to :game_product, WargamePersistence.Schemas.GameProduct
 
     has_many :scenarios, WargamePersistence.Schemas.Scenario
 
@@ -31,7 +32,7 @@ defmodule WargamePersistence.Schemas.Map do
   @optional_fields [
     :description, :version, :scale, :base_elevation,
     :centerpoint_lat, :centerpoint_lng, :default_terrain,
-    :metadata, :tile_data, :author_id, :published
+    :metadata, :tile_data, :author_id, :published, :game_product_id
   ]
 
   def changeset(map, attrs) do
@@ -42,6 +43,7 @@ defmodule WargamePersistence.Schemas.Map do
     |> validate_number(:width, greater_than: 0)
     |> validate_number(:height, greater_than: 0)
     |> foreign_key_constraint(:author_id)
+    |> foreign_key_constraint(:game_product_id)
   end
 
   def create_changeset(map, attrs) do
